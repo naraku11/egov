@@ -2,7 +2,6 @@
   "name": "egov-aluguinsan",
   "version": "1.0.0",
   "description": "E-Government Assistance System — Municipality of Aluguinsan, Cebu",
-  "type": "module",
   "main": "app.js",
   "engines": {
     "node": ">=18.0.0",

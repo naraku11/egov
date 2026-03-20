@@ -1,3 +1,5 @@
-// Hostinger Node.js Application entry point
-// This file is required by Hostinger's Node.js Application runner (Phusion Passenger)
-import './backend/src/index.js';
+// Hostinger Node.js Application entry point (CommonJS + dynamic ESM import)
+import('./backend/src/index.js').catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});
