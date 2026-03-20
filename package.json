@@ -2,14 +2,15 @@
   "name": "egov-aluguinsan",
   "version": "1.0.0",
   "description": "E-Government Assistance System — Municipality of Aluguinsan, Cebu",
-  "main": "backend/src/index.js",
+  "type": "module",
+  "main": "app.js",
   "engines": {
-    "node": ">=22.0.0",
-    "npm": ">=10.0.0"
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   },
   "scripts": {
-    "start": "node backend/src/index.js",
-    "postinstall": "npm --prefix backend install --omit=dev",
+    "start": "node app.js",
+    "postinstall": "npm --prefix backend install --omit=dev && npm --prefix backend run db:generate",
     "build": "npm --prefix frontend install && npm --prefix frontend run build && npm --prefix backend run db:generate",
     "db:migrate": "npm --prefix backend exec -- npx prisma migrate deploy",
     "db:seed": "npm --prefix backend run db:seed",
