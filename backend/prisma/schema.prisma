@@ -1,0 +1,261 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String    @id @default(cuid())
+  email       String?   @unique
+  phone       String?   @unique
+  name        String
+  barangay    String
+  address     String?
+  role        Role      @default(CLIENT)
+  password    String?
+  isVerified  Boolean   @default(false)
+  language    Language  @default(ENGLISH)
+  avatarUrl   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tickets              Ticket[]
+  notifications        Notification[]
+  createdAnnouncements Announcement[]
+
+  @@map("users")
+}
+
+model Servant {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String
+  position     String
+  phone        String?
+  password     String
+  departmentId String
+  department   Department    @relation(fields: [departmentId], references: [id])
+  status       ServantStatus @default(AVAILABLE)
+  workload     Int           @default(0)
+  avatarUrl    String?
+  lastActiveAt DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  tickets  Ticket[]
+  messages TicketMessage[]
+
+  @@index([departmentId])
+  @@index([status])
+  @@map("servants")
+}
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  description String?  @db.Text
+  head        String?
+  email       String?
+  phone       String?
+  keywords    Json     @default("[]")
+  color       String   @default("#3B82F6")
+  icon        String   @default("building")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  servants Servant[]
+  tickets  Ticket[]
+
+  @@map("departments")
+}
+
+model Ticket {
+  id               String       @id @default(cuid())
+  ticketNumber     String       @unique
+  userId           String
+  user             User         @relation(fields: [userId], references: [id])
+  departmentId     String
+  department       Department   @relation(fields: [departmentId], references: [id])
+  servantId        String?
+  servant          Servant?     @relation(fields: [servantId], references: [id])
+  title            String
+  description      String       @db.Text
+  category         String
+  status           TicketStatus @default(PENDING)
+  priority         Priority     @default(NORMAL)
+  aiConfidence     Float?
+  latitude         Float?
+  longitude        Float?
+  slaDeadline      DateTime?
+  escalatedAt      DateTime?
+  escalationReason String?      @db.Text
+  resolvedAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  attachments   Attachment[]
+  messages      TicketMessage[]
+  feedback      Feedback?
+  notifications Notification[]
+
+  @@index([userId])
+  @@index([servantId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([priority])
+  @@index([slaDeadline])
+  @@map("tickets")
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fileName  String
+  filePath  String
+  fileSize  Int
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@map("attachments")
+}
+
+model TicketMessage {
+  id         String     @id @default(cuid())
+  ticketId   String
+  ticket     Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  servantId  String?
+  servant    Servant?   @relation(fields: [servantId], references: [id])
+  senderType SenderType
+  senderName String
+  message    String     @db.Text
+  isInternal Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+
+  @@index([ticketId])
+  @@index([ticketId, isInternal])
+  @@map("ticket_messages")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticketId  String?
+  ticket    Ticket?  @relation(fields: [ticketId], references: [id])
+  type      String
+  title     String
+  message   String   @db.Text
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  ticketId  String   @unique
+  ticket    Ticket   @relation(fields: [ticketId], references: [id])
+  rating    Int
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("feedbacks")
+}
+
+model Announcement {
+  id          String               @id @default(cuid())
+  title       String
+  content     String               @db.LongText
+  category    AnnouncementCategory @default(INFO)
+  isPublished Boolean              @default(true)
+  publishedAt DateTime?
+  createdById String?
+  createdBy   User?                @relation(fields: [createdById], references: [id])
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([isPublished])
+  @@index([category])
+  @@map("announcements")
+}
+
+model DirectoryEntry {
+  id          String            @id @default(cuid())
+  name        String
+  position    String
+  department  String?
+  address     String?
+  phone       String?
+  email       String?
+  officeHours String?
+  category    DirectoryCategory @default(OFFICIAL)
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([category])
+  @@index([isActive])
+  @@map("directory_entries")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  CLIENT
+  ADMIN
+}
+
+enum TicketStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  ESCALATED
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  URGENT
+}
+
+enum Language {
+  ENGLISH
+  FILIPINO
+  CEBUANO
+}
+
+enum ServantStatus {
+  AVAILABLE
+  BUSY
+  OFFLINE
+}
+
+enum SenderType {
+  CLIENT
+  SERVANT
+  SYSTEM
+}
+
+enum AnnouncementCategory {
+  INFO
+  ALERT
+  EVENT
+}
+
+enum DirectoryCategory {
+  OFFICIAL
+  EMERGENCY
+  SERVICE
+}

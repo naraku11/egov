@@ -1,0 +1,417 @@
+import { useState, useEffect, useRef } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { Search, Send, Star, ArrowLeft, Paperclip, Clock, CheckCircle, AlertCircle, XCircle, MessageSquare } from 'lucide-react';
+import { format } from 'date-fns';
+import toast from 'react-hot-toast';
+import api from '../api/client.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
+import { useLanguage } from '../contexts/LanguageContext.jsx';
+import { useSocket } from '../contexts/SocketContext.jsx';
+import Navbar from '../components/Navbar.jsx';
+import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx';
+
+const statusTimeline = [
+  { status: 'PENDING',     label: 'Submitted',   icon: Clock         },
+  { status: 'ASSIGNED',    label: 'Assigned',     icon: CheckCircle   },
+  { status: 'IN_PROGRESS', label: 'In Progress',  icon: AlertCircle   },
+  { status: 'RESOLVED',    label: 'Resolved',     icon: CheckCircle   },
+];
+const statusOrder = { PENDING: 0, ASSIGNED: 1, IN_PROGRESS: 2, RESOLVED: 3, CLOSED: 3, ESCALATED: 1 };
+
+export default function TrackTicket() {
+  const { id } = useParams();
+  const { user } = useAuth();
+  const { t } = useLanguage();
+  const socket = useSocket();
+  const [tickets, setTickets]               = useState([]);
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [searchQuery, setSearchQuery]       = useState('');
+  const [statusFilter, setStatusFilter]     = useState('');
+  const [message, setMessage]               = useState('');
+  const [rating, setRating]                 = useState(0);
+  const [feedbackComment, setFeedbackComment] = useState('');
+  const [loading, setLoading]               = useState(true);
+  const [sendingMsg, setSendingMsg]         = useState(false);
+
+  const messagesEndRef = useRef(null);
+
+  // ── auto-scroll whenever messages update ──────────────────────────────────
+  useEffect(() => {
+    if (selectedTicket?.messages?.length) {
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    }
+  }, [selectedTicket?.messages?.length]);
+
+  // ── real-time: join ticket room and listen for events ─────────────────────
+  useEffect(() => {
+    if (!selectedTicket) return;
+    const room = `ticket:${selectedTicket.id}`;
+    socket.emit('join', { room });
+
+    const onMessage = (msg) => {
+      if (msg.senderType === 'CLIENT') return; // already shown via API response
+      setSelectedTicket(prev => {
+        if (!prev || prev.id !== msg.ticketId) return prev;
+        const exists = prev.messages.some(m => m.id === msg.id);
+        if (exists) return prev;
+        return { ...prev, messages: [...prev.messages, msg] };
+      });
+    };
+
+    const onUpdated = (update) => {
+      setSelectedTicket(prev => prev?.id === update.id ? { ...prev, ...update } : prev);
+      setTickets(prev => prev.map(t => t.id === update.id ? { ...t, ...update } : t));
+    };
+
+    socket.on('message:new', onMessage);
+    socket.on('ticket:updated', onUpdated);
+
+    return () => {
+      socket.emit('leave', { room });
+      socket.off('message:new', onMessage);
+      socket.off('ticket:updated', onUpdated);
+    };
+  }, [selectedTicket?.id]);
+
+  useEffect(() => { loadTickets(); }, [statusFilter]);
+  useEffect(() => { if (id) loadTicket(id); }, [id]);
+
+  const loadTickets = async () => {
+    try {
+      const params = new URLSearchParams({ limit: '50' });
+      if (statusFilter) params.append('status', statusFilter);
+      const { data } = await api.get(`/tickets?${params}`);
+      setTickets(data.tickets || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadTicket = async (ticketId) => {
+    try {
+      const { data } = await api.get(`/tickets/${ticketId}`);
+      setSelectedTicket(data);
+    } catch {
+      toast.error('Could not load ticket');
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!message.trim()) return;
+    setSendingMsg(true);
+    try {
+      await api.post(`/tickets/${selectedTicket.id}/message`, { message });
+      setMessage('');
+      await loadTicket(selectedTicket.id);
+    } catch {
+      toast.error('Failed to send message');
+    } finally {
+      setSendingMsg(false);
+    }
+  };
+
+  const submitFeedback = async () => {
+    if (!rating) return toast.error('Please select a rating');
+    try {
+      await api.post(`/tickets/${selectedTicket.id}/feedback`, { rating, comment: feedbackComment });
+      toast.success('Feedback submitted! Thank you!');
+      await loadTicket(selectedTicket.id);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const filteredTickets = tickets.filter(t =>
+    !searchQuery ||
+    t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    t.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Derive user initials for avatar
+  const userInitial = user?.name?.charAt(0).toUpperCase() || 'M';
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="flex gap-4 lg:gap-6 min-h-[500px] lg:h-[calc(100vh-7rem)]">
+
+          {/* ── Left: Ticket List ── */}
+          <div className={`${selectedTicket ? 'hidden lg:flex' : 'flex'} flex-col w-full lg:w-80 xl:w-96 flex-shrink-0`}>
+            <div className="card flex flex-col h-full">
+              <h2 className="font-semibold text-gray-900 mb-4">{t('myTickets')}</h2>
+
+              <div className="relative mb-3">
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                <input type="text" className="input-field pl-9 text-sm" placeholder={t('searchTickets')}
+                  value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+              </div>
+
+              <select className="input-field text-sm mb-4" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                <option value="">All Status</option>
+                <option value="PENDING">Pending</option>
+                <option value="ASSIGNED">Assigned</option>
+                <option value="IN_PROGRESS">In Progress</option>
+                <option value="RESOLVED">Resolved</option>
+                <option value="ESCALATED">Escalated</option>
+              </select>
+
+              <div className="flex-1 overflow-y-auto space-y-2">
+                {loading ? (
+                  <div className="flex items-center justify-center h-20">
+                    <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary-600 border-t-transparent" />
+                  </div>
+                ) : filteredTickets.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <p className="text-sm">{t('noTickets')}</p>
+                    <Link to="/submit" className="btn-primary text-xs mt-3 inline-block">Submit Concern</Link>
+                  </div>
+                ) : filteredTickets.map(ticket => (
+                  <button
+                    key={ticket.id}
+                    onClick={() => loadTicket(ticket.id)}
+                    className={`w-full text-left p-3 rounded-xl border transition-all ${
+                      selectedTicket?.id === ticket.id
+                        ? 'border-primary-400 bg-primary-50'
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <span className="text-xs text-gray-500 font-mono">{ticket.ticketNumber}</span>
+                      <StatusBadge status={ticket.status} />
+                    </div>
+                    <p className="text-sm font-medium text-gray-900 truncate">{ticket.title}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ticket.department?.color || '#3B82F6' }} />
+                      <p className="text-xs text-gray-500">{ticket.department?.name}</p>
+                    </div>
+                    <div className="flex items-center justify-between mt-1.5">
+                      <p className="text-xs text-gray-400">{format(new Date(ticket.createdAt), 'MMM d, yyyy')}</p>
+                      {ticket._count?.messages > 0 && (
+                        <span className="flex items-center gap-1 text-xs text-gray-400">
+                          <MessageSquare className="w-3 h-3" />
+                          {ticket._count.messages}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Right: Chat / Ticket Detail ── */}
+          {selectedTicket ? (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex flex-col h-full bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+
+                {/* ── Header ── */}
+                <div className="flex-shrink-0 px-5 py-4 border-b border-gray-100 bg-white">
+                  <div className="flex items-start gap-3">
+                    <button onClick={() => setSelectedTicket(null)} className="lg:hidden mt-0.5 p-1.5 hover:bg-gray-100 rounded-lg flex-shrink-0">
+                      <ArrowLeft className="w-4 h-4" />
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{selectedTicket.ticketNumber}</span>
+                        <StatusBadge status={selectedTicket.status} />
+                        <PriorityBadge priority={selectedTicket.priority} />
+                      </div>
+                      <h2 className="text-base font-bold text-gray-900 leading-tight">{selectedTicket.title}</h2>
+                      <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-gray-500">
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: selectedTicket.department?.color || '#3B82F6' }} />
+                          {selectedTicket.department?.name}
+                        </span>
+                        {selectedTicket.servant && <span>👤 {selectedTicket.servant.name}</span>}
+                        <span>📅 {format(new Date(selectedTicket.createdAt), 'MMM d, yyyy')}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Timeline ── */}
+                <div className="flex-shrink-0 px-5 py-2.5 border-b border-gray-50 bg-gray-50/60 overflow-x-auto">
+                  <div className="flex items-center gap-1">
+                    {statusTimeline.map((item, i) => {
+                      const current  = statusOrder[selectedTicket.status] || 0;
+                      const isActive = current >= statusOrder[item.status];
+                      return (
+                        <div key={item.status} className="flex items-center gap-1 flex-shrink-0">
+                          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                            isActive ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-400'
+                          }`}>
+                            <item.icon className="w-3 h-3" />
+                            {item.label}
+                          </div>
+                          {i < statusTimeline.length - 1 && (
+                            <div className={`h-0.5 w-6 flex-shrink-0 ${isActive ? 'bg-primary-300' : 'bg-gray-200'}`} />
+                          )}
+                        </div>
+                      );
+                    })}
+                    {selectedTicket.status === 'ESCALATED' && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 ml-2">
+                        <XCircle className="w-3 h-3" /> Escalated
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Messages area ── */}
+                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+
+                  {/* Original concern as opening "card" */}
+                  <div className="bg-gray-50 rounded-2xl p-4 mb-2">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Original Concern</p>
+                    <p className="text-sm text-gray-800 leading-relaxed">{selectedTicket.description}</p>
+                    {selectedTicket.attachments?.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {selectedTicket.attachments.map(att => (
+                          <a key={att.id} href={att.filePath} target="_blank" rel="noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:border-primary-300 transition-colors">
+                            <Paperclip className="w-3 h-3" />
+                            {att.fileName}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Message bubbles */}
+                  {selectedTicket.messages?.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+                      <MessageSquare className="w-10 h-10 mb-2 opacity-25" />
+                      <p className="text-sm font-medium">No messages yet</p>
+                      {!['RESOLVED', 'CLOSED'].includes(selectedTicket.status) && (
+                        <p className="text-xs mt-1 text-gray-400">Send a message to your assigned servant below</p>
+                      )}
+                    </div>
+                  ) : (
+                    selectedTicket.messages.map(msg => {
+                      // System messages — centered pill
+                      if (msg.senderType === 'SYSTEM') {
+                        return (
+                          <div key={msg.id} className="flex justify-center my-1">
+                            <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full italic">{msg.message}</span>
+                          </div>
+                        );
+                      }
+                      const isMe = msg.senderType === 'CLIENT';
+                      return (
+                        <div key={msg.id} className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                          {/* Avatar — servant side */}
+                          {!isMe && (
+                            <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold flex-shrink-0 mb-0.5 select-none">
+                              {msg.senderName?.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+
+                          <div className={`max-w-[72%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                            {!isMe && (
+                              <p className="text-xs text-gray-500 mb-1 px-1">{msg.senderName}</p>
+                            )}
+                            <div className={`px-4 py-2.5 text-sm leading-relaxed ${
+                              isMe
+                                ? 'bg-primary-600 text-white rounded-2xl rounded-br-sm'
+                                : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-bl-sm shadow-sm'
+                            }`}>
+                              {msg.message}
+                            </div>
+                            <p className={`text-xs mt-1 px-1 ${isMe ? 'text-gray-400' : 'text-gray-400'}`}>
+                              {format(new Date(msg.createdAt), 'h:mm a · MMM d')}
+                            </p>
+                          </div>
+
+                          {/* Avatar — me side */}
+                          {isMe && (
+                            <div className="w-7 h-7 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold flex-shrink-0 mb-0.5 select-none">
+                              {userInitial}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {/* Feedback prompt */}
+                  {(selectedTicket.status === 'RESOLVED' || selectedTicket.status === 'CLOSED') && !selectedTicket.feedback && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 mt-2">
+                      <p className="font-semibold text-yellow-900 mb-3">{t('rateService')}</p>
+                      <div className="flex gap-1 mb-3">
+                        {[1,2,3,4,5].map(s => (
+                          <button key={s} onClick={() => setRating(s)} className="transition-transform hover:scale-110">
+                            <Star className={`w-7 h-7 ${s <= rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />
+                          </button>
+                        ))}
+                      </div>
+                      <textarea className="input-field text-sm resize-none" rows={2} placeholder="Optional comment..."
+                        value={feedbackComment} onChange={e => setFeedbackComment(e.target.value)} />
+                      <button onClick={submitFeedback} className="btn-primary text-sm mt-2 w-full">{t('submitFeedback')}</button>
+                    </div>
+                  )}
+
+                  {selectedTicket.feedback && (
+                    <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
+                      <p className="text-sm font-semibold text-green-800 flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4" /> {t('thankYou')}
+                      </p>
+                      <div className="flex gap-1 mt-2">
+                        {[1,2,3,4,5].map(s => (
+                          <Star key={s} className={`w-5 h-5 ${s <= selectedTicket.feedback.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200'}`} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Scroll anchor */}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* ── Input bar ── */}
+                {!['RESOLVED', 'CLOSED'].includes(selectedTicket.status) && (
+                  <div className="flex-shrink-0 px-4 py-3 border-t border-gray-100 bg-white">
+                    <div className="flex gap-2 items-center">
+                      <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold flex-shrink-0 select-none">
+                        {userInitial}
+                      </div>
+                      <input
+                        type="text"
+                        className="input-field flex-1 text-sm"
+                        placeholder="Message your servant..."
+                        value={message}
+                        onChange={e => setMessage(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                      />
+                      <button
+                        onClick={sendMessage}
+                        disabled={sendingMsg || !message.trim()}
+                        className="btn-primary px-3.5 py-2.5 flex-shrink-0 disabled:opacity-50"
+                      >
+                        {sendingMsg
+                          ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          : <Send className="w-4 h-4" />
+                        }
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="hidden lg:flex flex-1 items-center justify-center">
+              <div className="text-center text-gray-400">
+                <MessageSquare className="w-16 h-16 mx-auto mb-4 opacity-20" />
+                <p className="text-lg font-medium text-gray-500">Select a concern to view details</p>
+                <p className="text-sm mt-1">Click any concern from the list on the left</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

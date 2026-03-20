@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="80" fill="#1D4ED8"/>
+  <text x="256" y="340" font-family="Arial" font-size="260" font-weight="bold" text-anchor="middle" fill="white">AG</text>
+  <text x="256" y="430" font-family="Arial" font-size="64" text-anchor="middle" fill="#93C5FD">E-GOV</text>
+</svg>

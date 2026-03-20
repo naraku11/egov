@@ -1,0 +1,820 @@
+import { useState, useEffect, useRef } from 'react';
+import {
+  Users, FileText, CheckCircle, AlertTriangle, Star, TrendingUp,
+  Building2, UserPlus, RefreshCw, X, Search, Filter, Clock,
+  ShieldCheck, Activity, ChevronRight, Pencil, Trash2, Camera,
+} from 'lucide-react';
+import { format, formatDistanceToNow } from 'date-fns';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, LineChart, Line,
+} from 'recharts';
+import toast from 'react-hot-toast';
+import api from '../api/client.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
+import Navbar from '../components/Navbar.jsx';
+import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx';
+
+// Unified add / edit modal
+function ServantModal({ servant, departments, onClose, onSaved }) {
+  const isEdit = !!servant;
+  const [form, setForm] = useState({
+    name:         servant?.name         || '',
+    email:        servant?.email        || '',
+    position:     servant?.position     || '',
+    phone:        servant?.phone        || '',
+    departmentId: servant?.departmentId || '',
+    status:       servant?.status       || 'AVAILABLE',
+    password:     '',
+  });
+  const [avatarFile, setAvatarFile]       = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(servant?.avatarUrl || null);
+  const [loading, setLoading]             = useState(false);
+  const fileRef = useRef();
+
+  const handleAvatarChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { toast.error('Image must be under 2 MB'); return; }
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.departmentId) return toast.error('Please select a department');
+    setLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append('name',         form.name);
+      fd.append('email',        form.email);
+      fd.append('position',     form.position);
+      fd.append('phone',        form.phone);
+      fd.append('departmentId', form.departmentId);
+      fd.append('status',       form.status);
+      if (form.password) fd.append('password', form.password);
+      if (avatarFile)    fd.append('avatar',   avatarFile);
+
+      if (isEdit) {
+        await api.put(`/servants/${servant.id}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        toast.success(`${form.name} updated`);
+      } else {
+        await api.post('/servants', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        toast.success(`${form.name} added`);
+      }
+      onSaved();
+      onClose();
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
+
+  const initials = form.name.trim()
+    ? (() => { const p = form.name.trim().split(' '); return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : form.name.slice(0, 2).toUpperCase(); })()
+    : '?';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-fadeIn">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+            {isEdit
+              ? <><Pencil className="w-4 h-4 text-primary-600" /> Edit Servant</>
+              : <><UserPlus className="w-4 h-4 text-primary-600" /> Add Public Servant</>
+            }
+          </h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+            <X className="w-4 h-4 text-gray-500" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+
+          {/* Avatar picker */}
+          <div className="flex flex-col items-center gap-2">
+            <div
+              className="relative cursor-pointer group"
+              onClick={() => fileRef.current.click()}
+              title="Click to change photo"
+            >
+              {avatarPreview ? (
+                <img
+                  src={avatarPreview}
+                  alt="Avatar"
+                  className="w-16 h-16 rounded-full object-cover border-2 border-gray-200 group-hover:opacity-70 transition-opacity"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold bg-green-600 group-hover:opacity-70 transition-opacity">
+                  {initials}
+                </div>
+              )}
+              <div className="absolute inset-0 flex items-center justify-center rounded-full">
+                <div className="w-7 h-7 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Camera className="w-3.5 h-3.5 text-white" />
+                </div>
+              </div>
+              <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-primary-600 rounded-full flex items-center justify-center border-2 border-white">
+                <Camera className="w-2.5 h-2.5 text-white" />
+              </div>
+            </div>
+            <p className="text-xs text-gray-400">Click to set photo · JPG, PNG, GIF, WebP · Max 2 MB</p>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+              <input className="input-field" placeholder="Maria Santos" value={form.name} onChange={set('name')} required />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+              <input type="email" className="input-field" placeholder="servant@aluguinsan.gov.ph" value={form.email} onChange={set('email')} required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Position *</label>
+              <input className="input-field" placeholder="e.g. Engineer I" value={form.position} onChange={set('position')} required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <input type="tel" className="input-field" placeholder="09xxxxxxxxx" value={form.phone} onChange={set('phone')} />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
+              <select className="input-field" value={form.departmentId} onChange={set('departmentId')} required>
+                <option value="">Select department</option>
+                {departments.map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+            {isEdit && (
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Availability Status</label>
+                <div className="flex gap-2">
+                  {[
+                    { value: 'AVAILABLE', label: 'Available', color: 'border-green-300  bg-green-50  text-green-700',  dot: 'bg-green-500'  },
+                    { value: 'BUSY',      label: 'Busy',      color: 'border-yellow-300 bg-yellow-50 text-yellow-700', dot: 'bg-yellow-500' },
+                    { value: 'OFFLINE',   label: 'Offline',   color: 'border-gray-300   bg-gray-100  text-gray-600',   dot: 'bg-gray-400'   },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, status: opt.value }))}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium border transition-all ${
+                        form.status === opt.value
+                          ? `${opt.color} shadow-sm`
+                          : 'border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${form.status === opt.value ? opt.dot : 'bg-gray-300'}`} />
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Password {isEdit ? <span className="font-normal text-gray-400">(leave blank to keep current)</span> : '*'}
+              </label>
+              <input
+                type="password"
+                className="input-field"
+                placeholder={isEdit ? '••••••••' : 'Temporary password'}
+                value={form.password}
+                onChange={set('password')}
+                required={!isEdit}
+                minLength={6}
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+            <button type="submit" disabled={loading} className="btn-primary flex-1">
+              {loading ? (isEdit ? 'Saving...' : 'Adding...') : (isEdit ? 'Save Changes' : 'Add Servant')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DeleteConfirmModal({ servant, onClose, onConfirm, loading }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm animate-fadeIn">
+        <div className="p-6 text-center">
+          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Trash2 className="w-6 h-6 text-red-600" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Remove Servant?</h2>
+          <p className="text-sm text-gray-500 mb-1">
+            You are about to remove <span className="font-semibold text-gray-800">{servant.name}</span>.
+          </p>
+          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+            Any open tickets assigned to this servant will be returned to <strong>Pending</strong>.
+          </p>
+        </div>
+        <div className="flex gap-3 px-6 pb-6">
+          <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className="flex-1 py-2 px-4 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            {loading ? 'Removing...' : 'Yes, Remove'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
+const STATUS_OPTIONS = ['ALL', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'ESCALATED'];
+const TABS = ['overview', 'tickets', 'servants', 'sla'];
+
+export default function AdminDashboard() {
+  const { user } = useAuth();
+  const [tab, setTab] = useState('overview');
+  const [stats, setStats] = useState(null);
+  const [tickets, setTickets] = useState([]);
+  const [servants, setServants] = useState([]);
+  const [slaBreaches, setSlaBreaches] = useState([]);
+  const [recentTickets, setRecentTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [departments, setDepartments] = useState([]);
+  const [servantModal, setServantModal] = useState(null); // null | 'add' | servant object
+  const [deletingServant, setDeletingServant] = useState(null); // servant object | null
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState(new Date());
+  // Tickets tab filters
+  const [ticketSearch, setTicketSearch] = useState('');
+  const [ticketStatusFilter, setTicketStatusFilter] = useState('ALL');
+
+  const servantPollRef = useRef(null);
+
+  useEffect(() => {
+    loadAll(true);
+  }, []);
+
+  // Poll servant data every 30 s when the Servants tab is active
+  useEffect(() => {
+    if (tab === 'servants') {
+      servantPollRef.current = setInterval(() => fetchTabData('servants'), 30000);
+    } else {
+      clearInterval(servantPollRef.current);
+    }
+    return () => clearInterval(servantPollRef.current);
+  }, [tab]);
+
+  // Fetch data for a tab without changing the active tab
+  const fetchTabData = async (targetTab) => {
+    try {
+      if (targetTab === 'tickets') {
+        const { data } = await api.get('/admin/tickets?limit=50');
+        setTickets(data.tickets || []);
+      } else if (targetTab === 'servants') {
+        const { data } = await api.get('/servants');
+        setServants(data || []);
+      } else if (targetTab === 'sla') {
+        const { data } = await api.get('/admin/sla-breaches');
+        setSlaBreaches(data || []);
+      }
+    } catch {
+      toast.error('Failed to load data');
+    }
+  };
+
+  // Switch to a tab and load its data
+  const loadTabData = (newTab) => {
+    setTab(newTab);
+    fetchTabData(newTab);
+  };
+
+  // Refresh overview stats + whatever tab is currently active
+  const loadAll = async (isInitial = false) => {
+    if (isInitial) setLoading(true); else setRefreshing(true);
+    try {
+      const [statsRes, deptsRes, recentRes] = await Promise.all([
+        api.get('/admin/stats'),
+        api.get('/departments'),
+        api.get('/admin/tickets?limit=5'),
+      ]);
+      setStats(statsRes.data);
+      setDepartments(deptsRes.data);
+      setRecentTickets(recentRes.data.tickets || []);
+      setLastRefreshed(new Date());
+      // Also refresh the active tab's data if not on overview
+      if (tab !== 'overview') await fetchTabData(tab);
+    } catch {
+      toast.error('Failed to refresh');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const handleDeleteServant = async () => {
+    if (!deletingServant) return;
+    setDeleteLoading(true);
+    try {
+      await api.delete(`/servants/${deletingServant.id}`);
+      toast.success(`${deletingServant.name} removed`);
+      setDeletingServant(null);
+      loadTabData('servants');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  if (loading || !stats) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary-600 border-t-transparent" />
+        </div>
+      </div>
+    );
+  }
+
+  // Chart data
+  const statusData = stats.byStatus?.map(s => ({ name: s.status.replace('_', ' '), value: s.count })) || [];
+  const deptData = stats.byDepartment?.map(d => ({ name: d.department?.name?.split(' ').slice(0, 2).join(' ') || 'Unknown', tickets: d.count })) || [];
+  const trend = stats.ticketsLast7Days || [];
+
+  const statCards = [
+    { label: 'Total Tickets', value: stats.totalTickets, icon: FileText, color: 'text-blue-600 bg-blue-50' },
+    { label: 'Pending', value: stats.pendingTickets, icon: Clock, color: 'text-yellow-600 bg-yellow-50' },
+    { label: 'Resolved Today', value: stats.resolvedToday, icon: CheckCircle, color: 'text-green-600 bg-green-50' },
+    { label: 'Active Users', value: stats.totalUsers, icon: Users, color: 'text-purple-600 bg-purple-50' },
+    { label: 'SLA Breaches', value: stats.slaBreaches, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
+    { label: 'Avg. Rating', value: stats.avgRating ? `${stats.avgRating.toFixed(1)}/5` : 'N/A', icon: Star, color: 'text-amber-600 bg-amber-50' },
+  ];
+
+  // Filtered tickets for tickets tab
+  const filteredTickets = tickets.filter(ticket => {
+    const matchesSearch = !ticketSearch ||
+      ticket.title?.toLowerCase().includes(ticketSearch.toLowerCase()) ||
+      ticket.ticketNumber?.toLowerCase().includes(ticketSearch.toLowerCase()) ||
+      ticket.user?.name?.toLowerCase().includes(ticketSearch.toLowerCase());
+    const matchesStatus = ticketStatusFilter === 'ALL' || ticket.status === ticketStatusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <div className="flex items-center gap-2 mb-0.5">
+              <h1 className="text-2xl font-bold text-gray-900">Admin Panel</h1>
+              <span className="flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                System Online
+              </span>
+            </div>
+            <p className="text-gray-500 text-sm">
+              Welcome, {user?.name?.split(' ')[0]} · {format(new Date(), 'EEEE, MMMM d, yyyy')} ·
+              <span className="ml-1 text-gray-400">
+                Updated {formatDistanceToNow(lastRefreshed, { addSuffix: true })}
+              </span>
+            </p>
+          </div>
+          <button
+            onClick={() => loadAll()}
+            disabled={refreshing}
+            className="btn-secondary flex items-center gap-2 text-sm disabled:opacity-60"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6 w-full sm:w-auto sm:inline-flex">
+          {TABS.map(t => (
+            <button
+              key={t}
+              onClick={() => loadTabData(t)}
+              className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                tab === t ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t === 'sla' ? 'SLA Breaches' : t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'sla' && stats.slaBreaches > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                  {stats.slaBreaches > 9 ? '9+' : stats.slaBreaches}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* ── OVERVIEW TAB ── */}
+        {tab === 'overview' && (
+          <div className="space-y-6 animate-fadeIn">
+            {/* Stat Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+              {statCards.map(({ label, value, icon: Icon, color }) => (
+                <div key={label} className="card">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${color}`}>
+                    <Icon className="w-5 h-5" />
+                  </div>
+                  <p className="text-xl font-bold text-gray-900">{value}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Charts + Recent Tickets */}
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* Charts column */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Ticket Trend */}
+                <div className="card">
+                  <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-primary-600" />
+                    Tickets — Last 7 Days
+                  </h3>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <LineChart data={trend}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => format(new Date(d), 'MMM d')} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="count" stroke="#3B82F6" strokeWidth={2} dot={{ r: 4 }} name="Tickets" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Status + Department charts side by side */}
+                <div className="grid sm:grid-cols-2 gap-6">
+                  {/* Status Pie */}
+                  <div className="card">
+                    <h3 className="font-semibold text-gray-900 mb-4 text-sm">Status Distribution</h3>
+                    <div className="flex items-center gap-3">
+                      <ResponsiveContainer width="55%" height={150}>
+                        <PieChart>
+                          <Pie data={statusData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value">
+                            {statusData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="flex-1 space-y-1.5">
+                        {statusData.map((item, i) => (
+                          <div key={item.name} className="flex items-center gap-1.5 text-xs">
+                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                            <span className="text-gray-500 flex-1 capitalize">{item.name.toLowerCase()}</span>
+                            <span className="font-semibold text-gray-800">{item.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dept Bar */}
+                  <div className="card">
+                    <h3 className="font-semibold text-gray-900 mb-4 text-sm flex items-center gap-2">
+                      <Building2 className="w-3.5 h-3.5 text-primary-600" />
+                      By Department
+                    </h3>
+                    <ResponsiveContainer width="100%" height={150}>
+                      <BarChart data={deptData} margin={{ left: -20 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <Tooltip />
+                        <Bar dataKey="tickets" radius={[3, 3, 0, 0]}>
+                          {deptData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Tickets column */}
+              <div className="card">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-primary-600" />
+                    Recent Submissions
+                  </h3>
+                  <button
+                    onClick={() => loadTabData('tickets')}
+                    className="text-xs text-primary-600 hover:underline flex items-center gap-1"
+                  >
+                    View all <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+                {recentTickets.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-6">No tickets yet</p>
+                ) : (
+                  <div className="space-y-3">
+                    {recentTickets.map(ticket => (
+                      <div key={ticket.id} className="p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-xs text-gray-400">{ticket.ticketNumber}</span>
+                          <StatusBadge status={ticket.status} />
+                        </div>
+                        <p className="text-sm font-medium text-gray-900 truncate">{ticket.title}</p>
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-xs text-gray-500 flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ticket.department?.color }} />
+                            {ticket.department?.name}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {formatDistanceToNow(new Date(ticket.createdAt), { addSuffix: true })}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── TICKETS TAB ── */}
+        {tab === 'tickets' && (
+          <div className="card animate-fadeIn">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
+              <h3 className="font-semibold text-gray-900 flex-1">All Tickets</h3>
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search ticket, title, resident..."
+                  value={ticketSearch}
+                  onChange={e => setTicketSearch(e.target.value)}
+                  className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-64"
+                />
+              </div>
+              {/* Status filter */}
+              <div className="relative">
+                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <select
+                  value={ticketStatusFilter}
+                  onChange={e => setTicketStatusFilter(e.target.value)}
+                  className="pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 appearance-none bg-white"
+                >
+                  {STATUS_OPTIONS.map(s => (
+                    <option key={s} value={s}>{s === 'ALL' ? 'All Statuses' : s.replace('_', ' ')}</option>
+                  ))}
+                </select>
+              </div>
+              <span className="text-xs text-gray-400 whitespace-nowrap">{filteredTickets.length} result{filteredTickets.length !== 1 ? 's' : ''}</span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    {['Ticket #', 'Title', 'Resident', 'Barangay', 'Department', 'Assigned To', 'Status', 'Priority', 'Date'].map(h => (
+                      <th key={h} className="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTickets.map(ticket => (
+                    <tr key={ticket.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                      <td className="py-3 px-3 font-mono text-xs text-gray-600">{ticket.ticketNumber}</td>
+                      <td className="py-3 px-3 font-medium text-gray-900 max-w-[180px] truncate">{ticket.title}</td>
+                      <td className="py-3 px-3 text-gray-600">{ticket.user?.name}</td>
+                      <td className="py-3 px-3 text-gray-500 text-xs">{ticket.user?.barangay}</td>
+                      <td className="py-3 px-3">
+                        <span className="flex items-center gap-1.5 text-xs">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ticket.department?.color }} />
+                          {ticket.department?.name}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-gray-500 text-xs">{ticket.servant?.name || '—'}</td>
+                      <td className="py-3 px-3"><StatusBadge status={ticket.status} /></td>
+                      <td className="py-3 px-3"><PriorityBadge priority={ticket.priority} /></td>
+                      <td className="py-3 px-3 text-gray-400 text-xs">{format(new Date(ticket.createdAt), 'MMM d, yyyy')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {filteredTickets.length === 0 && (
+                <p className="text-center text-gray-400 py-10 text-sm">No tickets match your filters</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── SERVANTS TAB ── */}
+        {tab === 'servants' && (
+          <div className="card animate-fadeIn">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h3 className="font-semibold text-gray-900">Public Servants</h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {servants.length} registered &nbsp;·&nbsp;
+                  <span className="text-green-600 font-medium">
+                    {servants.filter(s => s.lastActiveAt && (Date.now() - new Date(s.lastActiveAt).getTime()) < 120000).length} online now
+                  </span>
+                  &nbsp;· auto-refreshes every 30s
+                </p>
+              </div>
+              <button onClick={() => setServantModal('add')} className="btn-primary text-sm flex items-center gap-2">
+                <UserPlus className="w-4 h-4" />
+                Add Servant
+              </button>
+            </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {servants.map(servant => {
+                const workloadPct = Math.min(100, (servant.workload || 0) * 10);
+                const workloadColor = workloadPct >= 80 ? 'bg-red-500' : workloadPct >= 50 ? 'bg-yellow-500' : 'bg-green-500';
+
+                // Compute real-time presence from lastActiveAt
+                const diffMin = servant.lastActiveAt
+                  ? (Date.now() - new Date(servant.lastActiveAt).getTime()) / 60000
+                  : Infinity;
+                const presence = diffMin < 2
+                  ? { label: 'Online now', dot: 'bg-green-500 animate-pulse' }
+                  : diffMin < 10
+                  ? { label: `Active ${Math.floor(diffMin)}m ago`, dot: 'bg-yellow-400' }
+                  : servant.lastActiveAt
+                  ? { label: `Last seen ${formatDistanceToNow(new Date(servant.lastActiveAt), { addSuffix: true })}`, dot: 'bg-gray-300' }
+                  : { label: 'Never logged in', dot: 'bg-gray-200' };
+
+                return (
+                  <div key={servant.id} className="border border-gray-100 rounded-xl p-4 hover:shadow-sm transition-shadow">
+                    <div className="flex items-center gap-3 mb-3">
+                      {/* Avatar with presence dot */}
+                      <div className="relative flex-shrink-0">
+                        {servant.avatarUrl ? (
+                          <img
+                            src={servant.avatarUrl}
+                            alt={servant.name}
+                            className="w-10 h-10 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                            style={{ backgroundColor: servant.department?.color || '#3B82F6' }}
+                          >
+                            {servant.name.charAt(0)}
+                          </div>
+                        )}
+                        <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${presence.dot}`} title={presence.label} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 text-sm truncate">{servant.name}</p>
+                        <p className="text-xs text-gray-500 truncate">{servant.position}</p>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${
+                        servant.status === 'AVAILABLE' ? 'bg-green-100 text-green-700' :
+                        servant.status === 'BUSY' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-gray-100 text-gray-500'
+                      }`}>
+                        {servant.status.charAt(0) + servant.status.slice(1).toLowerCase()}
+                      </span>
+                    </div>
+
+                    {/* Department */}
+                    <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-2">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: servant.department?.color }} />
+                      {servant.department?.name}
+                    </div>
+
+                    {/* Presence line */}
+                    <div className="flex items-center gap-1.5 text-xs mb-3">
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${presence.dot}`} />
+                      <span className={diffMin < 2 ? 'text-green-600 font-medium' : diffMin < 10 ? 'text-yellow-600' : 'text-gray-400'}>
+                        {presence.label}
+                      </span>
+                    </div>
+
+                    {/* Workload bar */}
+                    <div className="mb-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-gray-500">Workload</span>
+                        <span className="text-xs font-medium text-gray-700">{servant.workload || 0} tickets</span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-1.5">
+                        <div
+                          className={`h-1.5 rounded-full transition-all ${workloadColor}`}
+                          style={{ width: `${workloadPct}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-gray-400 truncate mb-3">{servant.email}</p>
+
+                    {/* Action buttons */}
+                    <div className="flex gap-2 pt-2 border-t border-gray-100">
+                      <button
+                        onClick={() => setServantModal(servant)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setDeletingServant(servant)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              {servants.length === 0 && (
+                <p className="col-span-3 text-center text-gray-400 py-10 text-sm">No servants registered yet</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── SLA BREACHES TAB ── */}
+        {tab === 'sla' && (
+          <div className="card animate-fadeIn">
+            <div className="flex items-center gap-2 mb-5">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+              <h3 className="font-semibold text-gray-900">SLA Breach Tickets</h3>
+              <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-medium">
+                {slaBreaches.length} breached
+              </span>
+            </div>
+            {slaBreaches.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-300" />
+                <p className="font-medium text-green-600">No SLA breaches — all tickets are within SLA.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {slaBreaches.map(ticket => (
+                  <div key={ticket.id} className="flex items-start gap-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+                    <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="font-mono text-xs text-gray-600">{ticket.ticketNumber}</span>
+                        <StatusBadge status={ticket.status} />
+                        <PriorityBadge priority={ticket.priority} />
+                      </div>
+                      <p className="font-medium text-gray-900 text-sm">{ticket.title}</p>
+                      <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-gray-500">
+                        <span>🏛️ {ticket.department?.name}</span>
+                        {ticket.servant && <span>👤 {ticket.servant.name}</span>}
+                        <span>👥 {ticket.user?.name}</span>
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-xs text-red-700 font-semibold">SLA Deadline</p>
+                      <p className="text-xs text-red-600">{format(new Date(ticket.slaDeadline), 'MMM d, h:mm a')}</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {formatDistanceToNow(new Date(ticket.slaDeadline), { addSuffix: true })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
+
+      {servantModal && (
+        <ServantModal
+          servant={servantModal === 'add' ? null : servantModal}
+          departments={departments}
+          onClose={() => setServantModal(null)}
+          onSaved={() => loadTabData('servants')}
+        />
+      )}
+
+      {deletingServant && (
+        <DeleteConfirmModal
+          servant={deletingServant}
+          loading={deleteLoading}
+          onClose={() => setDeletingServant(null)}
+          onConfirm={handleDeleteServant}
+        />
+      )}
+
+    </div>
+  );
+}
