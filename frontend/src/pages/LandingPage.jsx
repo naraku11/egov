@@ -234,11 +234,10 @@ export default function LandingPage() {
             </div>
             <div className="text-sm text-center">
               <p>E-Government Assistance System</p>
-              <p>Compliant with RA 10173 (Data Privacy Act)</p>
             </div>
             <div className="text-sm text-right">
               <p>Hotline: (032) 000-0000</p>
-              <p>info@aluguinsan.gov.ph</p>
+              <p>info@https://aluguinsan-egov.online/</p>
             </div>
           </div>
           <div className="mt-6 pt-6 border-t border-gray-800 text-xs text-center">
