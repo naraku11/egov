@@ -7,6 +7,9 @@
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
   },
+  "dependencies": {
+    "express": "^5.1.0"
+  },
   "scripts": {
     "start": "node app.js",
     "postinstall": "npm --prefix backend install --omit=dev && npm --prefix backend run db:generate",
