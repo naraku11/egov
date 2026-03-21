@@ -7,19 +7,24 @@ import nodemailer from 'nodemailer';
 import prisma from '../lib/prisma.js';
 import { getIO } from '../lib/socket.js';
 
-// ─── SMTP Transport ──────────────────────────────────────────────────────────
+// ─── SMTP Transport (lazy-initialized on first send) ─────────────────────────
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.hostinger.com',
-  port: parseInt(process.env.SMTP_PORT || '465'),
-  secure: process.env.SMTP_SECURE === 'true',
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+let transporter = null;
 
-const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_USER;
+const getTransporter = () => {
+  if (!transporter) {
+    transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.hostinger.com',
+      port: parseInt(process.env.SMTP_PORT || '465'),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  }
+  return transporter;
+};
 
 // ─── HTML Email Template ─────────────────────────────────────────────────────
 
@@ -76,10 +81,11 @@ const emailTemplate = (title, body, cta, ctaLabel) => `
  * @param {string} html    - Full HTML body
  */
 export const sendEmailNotification = async (to, subject, html) => {
-  if (!to || !EMAIL_FROM) return;
+  const from = process.env.EMAIL_FROM || process.env.SMTP_USER;
+  if (!to || !from || !process.env.SMTP_USER) return;
   try {
-    await transporter.sendMail({
-      from: `"Aluguinsan E-Gov" <${EMAIL_FROM}>`,
+    await getTransporter().sendMail({
+      from: `"Aluguinsan E-Gov" <${from}>`,
       to,
       subject,
       html,
