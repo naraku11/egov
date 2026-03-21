@@ -20,7 +20,6 @@
 import 'dotenv/config';
 import { createServer } from 'http';
 import express from 'express';
-import compression from 'compression';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -60,16 +59,6 @@ const PORT = process.env.PORT || 5000;
 // Trust Hostinger/nginx reverse proxy for accurate IP-based rate limiting
 // (without this, req.ip would always be the proxy's IP, not the real client).
 app.set('trust proxy', 1);
-
-// ── Compression ──────────────────────────────────────────────────────────────
-// Only compress if the response isn't already encoded (avoids double-compression
-// behind Hostinger's reverse proxy which may gzip on its own).
-app.use(compression({
-  filter: (req, res) => {
-    if (req.headers['x-no-compression']) return false;
-    return compression.filter(req, res);
-  },
-}));
 
 // ── Security middleware ───────────────────────────────────────────────────────
 
