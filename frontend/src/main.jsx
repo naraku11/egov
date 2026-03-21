@@ -11,14 +11,18 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { Toaster } from 'react-hot-toast';
 import App from './App.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import './index.css'; // Tailwind base styles and global CSS resets
+
+// Signal to the HTML fallback timer that the JS bundle loaded successfully
+window.__egov_loaded = true;
 
 // Bootstrap the React application inside a StrictMode boundary.
 // StrictMode activates additional runtime warnings during development (double-invoked
 // effects, deprecated API detection, etc.) without affecting the production build.
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {/* Root component: sets up routing, context providers, and page layout */}
+    <ErrorBoundary>
     <App />
 
     {/*
@@ -35,5 +39,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         error:   { iconTheme: { primary: '#dc2626', secondary: '#fff' } }, // red X
       }}
     />
+    </ErrorBoundary>
   </React.StrictMode>
 );

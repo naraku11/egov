@@ -62,7 +62,14 @@ const PORT = process.env.PORT || 5000;
 app.set('trust proxy', 1);
 
 // ── Compression ──────────────────────────────────────────────────────────────
-app.use(compression());
+// Only compress if the response isn't already encoded (avoids double-compression
+// behind Hostinger's reverse proxy which may gzip on its own).
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
+}));
 
 // ── Security middleware ───────────────────────────────────────────────────────
 
@@ -210,8 +217,18 @@ self.addEventListener('activate', function() {
   // Hashed assets (JS/CSS) — long cache (7 days), safe because filenames change on rebuild
   app.use('/assets', express.static(path.join(frontendDist, 'assets'), { maxAge: '7d' }));
 
-  // Everything else in dist (favicon, manifest, icons, sw.js) — short cache
-  app.use(express.static(frontendDist, { maxAge: '0', etag: true }));
+  // Everything else in dist (favicon, manifest, icons) — no cache for HTML
+  app.use(express.static(frontendDist, {
+    maxAge: '0',
+    etag: true,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+      }
+    },
+  }));
 
   // SPA fallback — return index.html with no-cache for every non-/api route
   app.get(/^(?!\/api).*/, (req, res) => {
