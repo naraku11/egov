@@ -61,8 +61,9 @@ const generateAndSendAuthOtp = async (userId, user, type) => {
 
   const sentTo = { email: false, phone: !!user.phone };
 
-  // Send OTP to email via SMTP
-  if (user.email) {
+  // If user has a phone → SMS via Firebase on the frontend (primary)
+  // If no phone → fall back to email OTP via SMTP
+  if (!user.phone && user.email) {
     try {
       await sendOtpEmail(user.email, user.name, otp);
       sentTo.email = true;
@@ -70,9 +71,6 @@ const generateAndSendAuthOtp = async (userId, user, type) => {
       console.error(`📧 OTP email failed for ${user.email}:`, err.message);
     }
   }
-
-  // Phone SMS is handled by Firebase Phone Auth on the frontend
-  // We just tell the frontend a phone number is available
 
   console.log(`🔐 Auth OTP for ${user.name} (${userId}): ${otp} [${type}]`);
   return { sentTo, phone: user.phone || null };

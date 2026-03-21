@@ -235,8 +235,9 @@ export default function AuthPage() {
         setAuthOtpCode('');
         setSmsStep(null);
         smsConfirmRef.current = null;
+        clearRecaptcha();
         setTab('verify-otp');
-        if (data.sentTo.email) toast.success('Verification code sent to your email');
+        toast.success(data.phone ? 'Verify via SMS to continue' : 'Verification code sent to your email');
         return;
       }
 
@@ -338,8 +339,9 @@ export default function AuthPage() {
         setAuthOtpCode('');
         setSmsStep(null);
         smsConfirmRef.current = null;
+        clearRecaptcha();
         setTab('verify-otp');
-        if (data.sentTo.email) toast.success('Verification code sent to your email');
+        toast.success(data.phone ? 'Verify via SMS to continue' : 'Verification code sent to your email');
         return;
       }
 
@@ -665,7 +667,7 @@ export default function AuthPage() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => { setTab('login'); setPendingUserId(null); setAuthOtpCode(''); setSmsStep(null); }}
+                      onClick={() => { setTab('login'); setPendingUserId(null); setAuthOtpCode(''); setSmsStep(null); clearRecaptcha(); }}
                       className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
                     >
                       <ArrowLeft className="w-4 h-4 text-gray-500" />
@@ -673,14 +675,80 @@ export default function AuthPage() {
                     <h2 className="text-lg font-semibold text-gray-900">Verify Your Identity</h2>
                   </div>
 
-                  {/* Option 1: Email OTP — shown when email was sent */}
-                  {otpSentTo.email && smsStep !== 'sms-sent' && (
+                  {/* ── PRIMARY: SMS via Firebase (when user has phone) ──────── */}
+                  {pendingPhone && smsStep !== 'sms-sent' && (
+                    <>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p className="text-sm text-blue-700 flex items-center gap-1.5">
+                          <Smartphone className="w-4 h-4" />
+                          We'll send an SMS verification code to your phone number.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSendAuthSms}
+                        disabled={sendingSms}
+                        className="btn-primary w-full py-2.5 flex items-center justify-center gap-2"
+                      >
+                        <Smartphone className="w-4 h-4" />
+                        {sendingSms ? 'Sending SMS...' : 'Send SMS Code'}
+                      </button>
+                    </>
+                  )}
+
+                  {/* SMS code entry — shown after Firebase sends the SMS */}
+                  {smsStep === 'sms-sent' && (
+                    <>
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                        <p className="text-sm text-green-700 flex items-center gap-1.5">
+                          <Smartphone className="w-4 h-4" />
+                          SMS code sent to {pendingPhone}
+                        </p>
+                      </div>
+
+                      <form onSubmit={handleVerifyAuthSms} className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">SMS Verification Code</label>
+                          <div className="relative">
+                            <KeyRound className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              maxLength={6}
+                              className="input-field pl-10 tracking-widest font-mono text-center text-lg"
+                              placeholder="000000"
+                              value={authOtpCode}
+                              onChange={e => setAuthOtpCode(e.target.value.replace(/\D/g, ''))}
+                              autoFocus
+                              required
+                            />
+                          </div>
+                        </div>
+                        <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
+                          {loading ? 'Verifying...' : 'Verify & Continue'}
+                        </button>
+                        <div className="text-center">
+                          <button
+                            type="button"
+                            onClick={() => { setSmsStep(null); setAuthOtpCode(''); clearRecaptcha(); }}
+                            className="text-sm text-gray-500 hover:text-primary-600"
+                          >
+                            Resend SMS code
+                          </button>
+                        </div>
+                      </form>
+                    </>
+                  )}
+
+                  {/* ── FALLBACK: Email OTP (when no phone number) ───────────── */}
+                  {!pendingPhone && otpSentTo.email && (
                     <>
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                         <p className="text-sm text-blue-700 flex items-center gap-1.5">
                           <Mail className="w-4 h-4" />
                           A verification code has been sent to your email address.
                         </p>
+                        <p className="text-xs text-blue-600 mt-1">Check your inbox and spam folder. The code expires in 5 minutes.</p>
                       </div>
 
                       <form onSubmit={handleVerifyAuthOtp} className="space-y-4">
@@ -718,76 +786,10 @@ export default function AuthPage() {
                     </>
                   )}
 
-                  {/* Divider — shown when both email and phone options are available */}
-                  {otpSentTo.email && pendingPhone && smsStep !== 'sms-sent' && (
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 h-px bg-gray-200" />
-                      <span className="text-xs text-gray-400 font-medium">OR</span>
-                      <div className="flex-1 h-px bg-gray-200" />
-                    </div>
-                  )}
-
-                  {/* Option 2: SMS via Firebase — shown when user has a phone number */}
-                  {pendingPhone && smsStep !== 'sms-sent' && (
-                    <button
-                      type="button"
-                      onClick={handleSendAuthSms}
-                      disabled={sendingSms}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-60"
-                    >
-                      <Smartphone className="w-4 h-4" />
-                      {sendingSms ? 'Sending SMS...' : 'Verify via SMS instead'}
-                    </button>
-                  )}
-
-                  {/* SMS code entry — shown after Firebase sends the SMS */}
-                  {smsStep === 'sms-sent' && (
-                    <>
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                        <p className="text-sm text-green-700 flex items-center gap-1.5">
-                          <Smartphone className="w-4 h-4" />
-                          SMS code sent to {pendingPhone}
-                        </p>
-                      </div>
-
-                      <form onSubmit={handleVerifyAuthSms} className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">SMS Verification Code</label>
-                          <div className="relative">
-                            <KeyRound className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              maxLength={6}
-                              className="input-field pl-10 tracking-widest font-mono text-center text-lg"
-                              placeholder="000000"
-                              value={authOtpCode}
-                              onChange={e => setAuthOtpCode(e.target.value.replace(/\D/g, ''))}
-                              autoFocus
-                              required
-                            />
-                          </div>
-                        </div>
-                        <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
-                          {loading ? 'Verifying...' : 'Verify & Continue'}
-                        </button>
-                        <div className="text-center">
-                          <button
-                            type="button"
-                            onClick={() => { setSmsStep(null); setAuthOtpCode(''); }}
-                            className="text-sm text-gray-500 hover:text-primary-600"
-                          >
-                            Use email code instead
-                          </button>
-                        </div>
-                      </form>
-                    </>
-                  )}
-
-                  {/* Fallback: no email sent and no phone — shouldn't happen but just in case */}
-                  {!otpSentTo.email && !pendingPhone && (
+                  {/* No contact info at all */}
+                  {!pendingPhone && !otpSentTo.email && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-                      No email or phone number on your account. Please contact admin.
+                      No phone or email on your account. Please contact admin.
                     </div>
                   )}
                 </div>
