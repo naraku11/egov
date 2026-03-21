@@ -5,9 +5,15 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig({
   plugins: [
     react(),
+    // Strip crossorigin attribute from built HTML to avoid CORS issues behind reverse proxy
+    {
+      name: 'remove-crossorigin',
+      transformIndexHtml(html) {
+        return html.replace(/ crossorigin/g, '');
+      },
+    },
     VitePWA({
       registerType: 'autoUpdate',
-      // Don't inject manifest link in dev — avoids missing-icon warnings
       devOptions: { enabled: false },
       includeAssets: ['favicon.svg', 'icons/*.png'],
       manifest: {
@@ -29,6 +35,11 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         navigateFallback: 'index.html',
+        // Force new service worker to take control immediately
+        skipWaiting: true,
+        clientsClaim: true,
+        // Clean old caches from previous builds
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: /^\/api\/.*/i,
@@ -64,5 +75,12 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    modulePreload: { polyfill: false },
+    rollupOptions: {
+      output: {
+        // No crossorigin attribute on script/link tags
+        crossOriginLoading: false,
+      },
+    },
   },
 });
