@@ -113,25 +113,38 @@ export default function AuthPage() {
 
   /**
    * Clears any existing reCAPTCHA widget and resets the ref.
+   * Replaces the DOM node entirely to avoid "already rendered" errors.
    */
   const clearRecaptcha = useCallback(() => {
     if (recaptchaRef.current) {
       try { recaptchaRef.current.clear(); } catch { /* ignore */ }
       recaptchaRef.current = null;
     }
-    // Also clear the DOM container in case the widget left behind rendered elements
+    // Replace the container node entirely so grecaptcha loses its reference
     const el = document.getElementById('recaptcha-container');
-    if (el) el.innerHTML = '';
+    if (el) {
+      const fresh = document.createElement('div');
+      fresh.id = 'recaptcha-container';
+      el.replaceWith(fresh);
+    }
   }, []);
 
   /**
-   * Returns a ready reCAPTCHA verifier, creating one if needed.
+   * Returns a ready reCAPTCHA verifier, always creating a fresh one.
    */
   const getRecaptcha = useCallback(() => {
-    if (recaptchaRef.current) return recaptchaRef.current;
-    // Clear DOM first to avoid "already rendered" error
+    // Always start fresh — destroy any previous instance
+    if (recaptchaRef.current) {
+      try { recaptchaRef.current.clear(); } catch { /* ignore */ }
+      recaptchaRef.current = null;
+    }
+    // Replace the container to guarantee a clean DOM node
     const el = document.getElementById('recaptcha-container');
-    if (el) el.innerHTML = '';
+    if (el) {
+      const fresh = document.createElement('div');
+      fresh.id = 'recaptcha-container';
+      el.replaceWith(fresh);
+    }
     recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
       size: 'invisible',
       callback: () => { /* reCAPTCHA solved */ },
