@@ -286,9 +286,9 @@ export default function Navbar() {
                 <div className="relative" ref={notifRef}>
                   <button
                     onClick={() => setNotifOpen(!notifOpen)}
-                    className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                    className="relative p-2.5 rounded-lg text-gray-500 hover:bg-gray-100 active:bg-gray-200 transition-colors"
                   >
-                    <Bell className="w-4 h-4" />
+                    <Bell className="w-5 h-5" />
                     {/* Red badge showing unread count (capped display at "9+") */}
                     {unread > 0 && (
                       <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
@@ -440,7 +440,7 @@ export default function Navbar() {
 
               {/* Mobile hamburger — toggles the slide-down drawer */}
               <button
-                className="md:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="md:hidden p-2.5 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors"
                 onClick={() => setMobileOpen(!mobileOpen)}
                 aria-label="Toggle menu"
               >
@@ -475,15 +475,15 @@ export default function Navbar() {
                   <button
                     onClick={openProfile}
                     title="Edit Profile"
-                    className="p-2 rounded-lg text-gray-500 hover:bg-gray-200 transition-colors"
+                    className="p-2.5 rounded-lg text-gray-500 hover:bg-gray-200 active:bg-gray-300 transition-colors"
                   >
-                    <UserCog className="w-4 h-4" />
+                    <UserCog className="w-5 h-5" />
                   </button>
                   <button
                     onClick={handleLogout}
-                    className="p-2 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                    className="p-2.5 rounded-lg text-red-500 hover:bg-red-50 active:bg-red-100 transition-colors"
                   >
-                    <LogOut className="w-4 h-4" />
+                    <LogOut className="w-5 h-5" />
                   </button>
                 </div>
               </div>

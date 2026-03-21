@@ -29,6 +29,7 @@ import {
   Users, FileText, CheckCircle, AlertTriangle, Star, TrendingUp,
   Building2, UserPlus, RefreshCw, X, Search, Filter, Clock,
   ShieldCheck, Activity, ChevronRight, Pencil, Trash2, Camera,
+  Archive, MapPin, Phone, Mail, UserX,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
@@ -343,6 +344,139 @@ function DeleteConfirmModal({ servant, onClose, onConfirm, loading }) {
   );
 }
 
+/**
+ * CitizenModal component.
+ *
+ * Modal dialog for editing a citizen's profile. Admin can update name, email,
+ * phone, barangay, address, verification status, and reset password.
+ */
+function CitizenModal({ citizen, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name:       citizen?.name       || '',
+    email:      citizen?.email      || '',
+    phone:      citizen?.phone      || '',
+    barangay:   citizen?.barangay   || '',
+    address:    citizen?.address    || '',
+    isVerified: citizen?.isVerified ?? true,
+    password:   '',
+  });
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.name || !form.barangay) return toast.error('Name and barangay are required');
+    setLoading(true);
+    try {
+      const payload = { ...form };
+      if (!payload.password) delete payload.password;
+      await api.put(`/admin/users/${citizen.id}`, payload);
+      toast.success('Citizen updated');
+      onSaved();
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto animate-fadeIn" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <h2 className="text-lg font-semibold text-gray-900">Edit Citizen</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+            <input className="input-field" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input type="email" className="input-field" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <input type="tel" className="input-field" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Barangay *</label>
+              <input className="input-field" value={form.barangay} onChange={e => setForm(f => ({ ...f, barangay: e.target.value }))} required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+              <input className="input-field" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+            <input type="password" className="input-field" placeholder="Leave blank to keep current" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} minLength={6} />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-gray-700">Account Status:</label>
+            <button
+              type="button"
+              onClick={() => setForm(f => ({ ...f, isVerified: !f.isVerified }))}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                form.isVerified ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+              }`}
+            >
+              {form.isVerified ? 'Verified (Active)' : 'Unverified (Archived)'}
+            </button>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+            <button type="submit" disabled={loading} className="btn-primary flex-1">
+              {loading ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * CitizenDeleteModal component.
+ *
+ * Confirmation dialog before permanently deleting a citizen account.
+ */
+function CitizenDeleteModal({ citizen, onClose, onConfirm, loading }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm animate-fadeIn">
+        <div className="p-6 text-center">
+          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <UserX className="w-6 h-6 text-red-600" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Delete Citizen?</h2>
+          <p className="text-sm text-gray-500 mb-1">
+            You are about to delete <span className="font-semibold text-gray-800">{citizen.name}</span>.
+          </p>
+          {citizen._count?.tickets > 0 && (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+              This citizen has <strong>{citizen._count.tickets} ticket(s)</strong>. You must archive instead if tickets exist.
+            </p>
+          )}
+        </div>
+        <div className="flex gap-3 px-6 pb-6">
+          <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+          <button
+            onClick={onConfirm}
+            disabled={loading || citizen._count?.tickets > 0}
+            className="flex-1 py-2 px-4 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            {loading ? 'Deleting...' : 'Yes, Delete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Chart colour palette cycled across pie slices, bar cells, etc. */
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
 
@@ -350,7 +484,7 @@ const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'
 const STATUS_OPTIONS = ['ALL', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'ESCALATED'];
 
 /** Navigation tabs for the dashboard; order determines left-to-right display */
-const TABS = ['overview', 'tickets', 'servants', 'sla'];
+const TABS = ['overview', 'tickets', 'servants', 'citizens', 'sla'];
 
 /**
  * AdminDashboard component.
@@ -380,6 +514,8 @@ export default function AdminDashboard() {
   const [servants, setServants] = useState([]);
   /** Tickets whose SLA deadline has passed — loaded when the SLA tab is opened */
   const [slaBreaches, setSlaBreaches] = useState([]);
+  /** All registered citizens — loaded when the Citizens tab is first opened */
+  const [citizens, setCitizens] = useState([]);
   /** The 5 most recently submitted tickets shown in the Overview sidebar */
   const [recentTickets, setRecentTickets] = useState([]);
 
@@ -396,6 +532,15 @@ export default function AdminDashboard() {
   const [deletingServant, setDeletingServant] = useState(null);
   /** True while the delete API call is in flight (disables the confirm button) */
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  /** Citizen object to edit in CitizenModal, or null */
+  const [citizenModal, setCitizenModal] = useState(null);
+  /** Citizen object staged for deletion, or null */
+  const [deletingCitizen, setDeletingCitizen] = useState(null);
+  /** True while the citizen delete API call is in flight */
+  const [citizenDeleteLoading, setCitizenDeleteLoading] = useState(false);
+  /** Search query for the citizens tab */
+  const [citizenSearch, setCitizenSearch] = useState('');
 
   // ── Refresh state ───────────────────────────────────────────────────────────
   /** True while a manual refresh is in flight (shows spinner on the Refresh button) */
@@ -452,6 +597,9 @@ export default function AdminDashboard() {
       } else if (targetTab === 'servants') {
         const { data } = await api.get('/servants');
         setServants(data || []);
+      } else if (targetTab === 'citizens') {
+        const { data } = await api.get('/admin/users');
+        setCitizens(data || []);
       } else if (targetTab === 'sla') {
         const { data } = await api.get('/admin/sla-breaches');
         setSlaBreaches(data || []);
@@ -518,6 +666,31 @@ export default function AdminDashboard() {
       toast.error(err.response?.data?.error || err.message);
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  const handleDeleteCitizen = async () => {
+    if (!deletingCitizen) return;
+    setCitizenDeleteLoading(true);
+    try {
+      await api.delete(`/admin/users/${deletingCitizen.id}`);
+      toast.success(`${deletingCitizen.name} deleted`);
+      setDeletingCitizen(null);
+      fetchTabData('citizens');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    } finally {
+      setCitizenDeleteLoading(false);
+    }
+  };
+
+  const handleArchiveCitizen = async (citizen) => {
+    try {
+      const { data } = await api.patch(`/admin/users/${citizen.id}/archive`);
+      toast.success(`${citizen.name} ${data.isVerified ? 'unarchived' : 'archived'}`);
+      fetchTabData('citizens');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
     }
   };
 
@@ -988,6 +1161,120 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* ── CITIZENS TAB ────────────────────────────────────────────────────
+            Grid of registered citizen cards with search, edit, archive, and
+            delete actions.
+        ────────────────────────────────────────────────────────────────────── */}
+        {tab === 'citizens' && (
+          <div className="space-y-4 animate-fadeIn">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Users className="w-5 h-5 text-primary-600" />
+                Registered Citizens
+                <span className="bg-primary-100 text-primary-700 text-xs px-2 py-0.5 rounded-full font-medium">
+                  {citizens.length}
+                </span>
+              </h3>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search citizens..."
+                  className="input-field pl-9 w-full sm:w-64"
+                  value={citizenSearch}
+                  onChange={e => setCitizenSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {citizens
+                .filter(c => {
+                  if (!citizenSearch) return true;
+                  const q = citizenSearch.toLowerCase();
+                  return c.name?.toLowerCase().includes(q) ||
+                    c.email?.toLowerCase().includes(q) ||
+                    c.phone?.toLowerCase().includes(q) ||
+                    c.barangay?.toLowerCase().includes(q);
+                })
+                .map(citizen => (
+                  <div key={citizen.id} className={`card border ${citizen.isVerified ? 'border-gray-100' : 'border-red-200 bg-red-50/30'}`}>
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-sm">
+                          {citizen.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900 text-sm">{citizen.name}</p>
+                          <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                            citizen.isVerified ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                          }`}>
+                            {citizen.isVerified ? 'Verified' : 'Archived'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs text-gray-500 mb-4">
+                      {citizen.email && (
+                        <div className="flex items-center gap-2">
+                          <Mail className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="truncate">{citizen.email}</span>
+                        </div>
+                      )}
+                      {citizen.phone && (
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 text-gray-400" />
+                          <span>{citizen.phone}</span>
+                        </div>
+                      )}
+                      {citizen.barangay && (
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                          <span>Brgy. {citizen.barangay}</span>
+                        </div>
+                      )}
+                      {citizen._count?.tickets > 0 && (
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-3.5 h-3.5 text-gray-400" />
+                          <span>{citizen._count.tickets} ticket(s)</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2 pt-3 border-t border-gray-100">
+                      <button
+                        onClick={() => setCitizenModal(citizen)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 active:bg-primary-200 rounded-lg transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleArchiveCitizen(citizen)}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-lg transition-colors ${
+                          citizen.isVerified
+                            ? 'text-amber-600 bg-amber-50 hover:bg-amber-100 active:bg-amber-200'
+                            : 'text-green-600 bg-green-50 hover:bg-green-100 active:bg-green-200'
+                        }`}
+                      >
+                        <Archive className="w-3.5 h-3.5" /> {citizen.isVerified ? 'Archive' : 'Restore'}
+                      </button>
+                      <button
+                        onClick={() => setDeletingCitizen(citizen)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 active:bg-red-200 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              {citizens.length === 0 && (
+                <p className="col-span-3 text-center text-gray-400 py-10 text-sm">No citizens registered yet</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ── SLA BREACHES TAB ─────────────────────────────────────────────────
             List of tickets that have passed their SLA deadline without being
             resolved. Each entry shows the deadline timestamp and a relative
@@ -1065,6 +1352,25 @@ export default function AdminDashboard() {
           loading={deleteLoading}
           onClose={() => setDeletingServant(null)}
           onConfirm={handleDeleteServant}
+        />
+      )}
+
+      {/* Edit citizen modal */}
+      {citizenModal && (
+        <CitizenModal
+          citizen={citizenModal}
+          onClose={() => setCitizenModal(null)}
+          onSaved={() => { setCitizenModal(null); fetchTabData('citizens'); }}
+        />
+      )}
+
+      {/* Delete citizen confirmation modal */}
+      {deletingCitizen && (
+        <CitizenDeleteModal
+          citizen={deletingCitizen}
+          loading={citizenDeleteLoading}
+          onClose={() => setDeletingCitizen(null)}
+          onConfirm={handleDeleteCitizen}
         />
       )}
 

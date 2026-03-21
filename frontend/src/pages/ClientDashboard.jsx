@@ -173,7 +173,7 @@ export default function ClientDashboard() {
                   <Link
                     key={ticket.id}
                     to={`/tickets/${ticket.id}`}
-                    className="block p-4 border border-gray-100 rounded-xl hover:border-primary-200 hover:bg-primary-50/30 transition-all group"
+                    className="block p-4 border border-gray-100 rounded-xl hover:border-primary-200 hover:bg-primary-50/30 active:bg-primary-50/50 transition-all group"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
@@ -228,9 +228,9 @@ export default function ClientDashboard() {
               <h2 className="font-semibold text-gray-900 mb-4">Quick Actions</h2>
               <div className="space-y-2">
                 {[
-                  { label: t('trackTicket'), to: '/tickets', icon: '🔍', color: 'bg-blue-50 text-blue-700 hover:bg-blue-100' },
-                  { label: 'Barangay Directory', to: '/directory', icon: '📋', color: 'bg-green-50 text-green-700 hover:bg-green-100' },
-                  { label: 'Announcements', to: '/announcements', icon: '📢', color: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
+                  { label: t('trackTicket'), to: '/tickets', icon: '🔍', color: 'bg-blue-50 text-blue-700 hover:bg-blue-100 active:bg-blue-200' },
+                  { label: 'Barangay Directory', to: '/directory', icon: '📋', color: 'bg-green-50 text-green-700 hover:bg-green-100 active:bg-green-200' },
+                  { label: 'Announcements', to: '/announcements', icon: '📢', color: 'bg-amber-50 text-amber-700 hover:bg-amber-100 active:bg-amber-200' },
                 ].map(action => (
                   <Link
                     key={action.label}

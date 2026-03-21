@@ -3,80 +3,22 @@
 
 AI-powered citizen concern management system that matches residents with the appropriate public servants — fast, transparent, and multilingual.
 
----
-
-## System Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  PRESENTATION LAYER                  │
-│  React.js + Vite + Tailwind CSS (Web / PWA)         │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│                 API / BACKEND LAYER                   │
-│  Node.js + Express  ─── Python Flask (AI Classifier) │
-│  JWT Auth · Rate Limiting · File Upload (Multer)     │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│                   DATA LAYER                          │
-│  PostgreSQL (Primary DB via Prisma ORM)              │
-│  Redis (Session cache, real-time status)             │
-└─────────────────────────────────────────────────────┘
-```
+**Live:** [aluguinsan-egov.online](https://aluguinsan-egov.online)
 
 ---
 
-## Quick Start
+## Tech Stack
 
-### Option A: Docker Compose (Recommended)
-
-```bash
-# 1. Enter the project directory
-cd egov_v1
-
-# 2. Copy and configure environment
-cp .env.example .env
-# Edit .env with your database credentials and secrets
-
-# 3. Start all services
-docker-compose up -d
-
-# Services:
-#   Web:     http://localhost:3000
-#   API:     http://localhost:5000
-#   AI:      http://localhost:5001
-```
-
-### Option B: Manual Development Setup
-
-**Prerequisites:** Node.js 20+, PostgreSQL 16, Redis 7, Python 3.11+
-
-```bash
-# --- Backend ---
-cd backend
-cp .env.example .env
-# Set DATABASE_URL in .env (postgresql://user:pass@localhost:5432/egov_aluguinsan)
-
-npm install
-npx prisma migrate dev
-node prisma/seed.js
-npm run dev
-# API runs on http://localhost:5000
-
-# --- AI Classifier ---
-cd ../ai-classifier
-pip install -r requirements.txt
-python app.py
-# Runs on http://localhost:5001
-
-# --- Frontend ---
-cd ../frontend
-npm install
-npm run dev
-# Runs on http://localhost:3000
-```
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18 + Vite 5 + Tailwind CSS 3 |
+| Backend | Node.js + Express 5 |
+| Database | MySQL 8 (Prisma ORM) |
+| AI | Anthropic Claude API (ticket classification) |
+| Auth | JWT + bcrypt + OTP (email & Firebase Phone Auth) |
+| Real-time | Socket.IO |
+| Email | Nodemailer (Hostinger SMTP) |
+| Hosting | Hostinger (Node.js + MySQL) |
 
 ---
 
@@ -88,328 +30,265 @@ npm run dev
 | Resident | juan.delacruz@example.com | resident123 |
 | Servant | maria.santos@aluguinsan.gov.ph | servant123 |
 
-> Servant accounts log in using the **"Login as Public Servant"** toggle on the login page.
+> Citizens require OTP verification after login. Admin and servants log in directly.
+
+---
+
+## Setup
+
+### Prerequisites
+
+Node.js 20+, MySQL 8
+
+### 1. Install dependencies
+
+```bash
+cd backend && npm install
+cd ../frontend && npm install
+```
+
+### 2. Configure environment
+
+**Backend** (`backend/.env`):
+```env
+DATABASE_URL=mysql://user:pass@localhost:3306/egov_db
+JWT_SECRET=your-secret-key
+JWT_EXPIRES_IN=7d
+ANTHROPIC_API_KEY=sk-ant-...
+NODE_ENV=production
+PORT=5000
+CLIENT_URL=https://aluguinsan-egov.online
+SMTP_HOST=smtp.hostinger.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=info@aluguinsan-egov.online
+SMTP_PASS=your-smtp-password
+EMAIL_FROM=info@aluguinsan-egov.online
+FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json
+```
+
+**Frontend** (`frontend/.env`):
+```env
+VITE_FIREBASE_API_KEY=your-firebase-api-key
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
+VITE_FIREBASE_APP_ID=your-app-id
+```
+
+### 3. Database setup
+
+**Option A — Prisma CLI:**
+```bash
+cd backend
+npx prisma migrate deploy
+node prisma/seed.js
+```
+
+**Option B — SQL files (for phpMyAdmin / remote MySQL):**
+
+Import in order via phpMyAdmin:
+1. `sql/01-schema.sql` — Tables, indexes, departments, Prisma migrations
+2. `sql/02-seed-admin.sql` — Admin account
+3. `sql/03-seed-servants.sql` — 11 government servants
+4. `sql/04-seed-citizens.sql` — 10 citizen accounts
+
+### 4. Run
+
+```bash
+# Backend
+cd backend && npm start
+
+# Frontend (dev)
+cd frontend && npm run dev
+
+# Frontend (production build)
+cd frontend && npm run build
+```
 
 ---
 
 ## Key Features
 
-### Resident (Client) Flow
-- Landing page with language selector (English / Filipino / Cebuano)
-- Register and login with email + password
+### Citizen Flow
+- Trilingual interface (English / Filipino / Cebuano)
+- Register and login with email/phone + password + **OTP verification**
+- Login with phone number via **Firebase Phone Auth** (SMS OTP)
 - Submit concerns via text, voice-to-text, or category selection with file attachments
-- AI classifier automatically routes concerns to the correct department
+- AI classifier routes concerns to the correct department automatically
 - Real-time ticket tracking with status timeline
-- **Chat with assigned servant** — WhatsApp-style message bubbles, auto-scroll, live polling every 8 s
-- Leave star ratings and comments on resolved tickets
-- **Announcements** — browse published barangay announcements with category filters (Info / Alert / Event)
-- **Barangay Directory** — look up officials, emergency services, and government offices
-- **Edit profile** — update name, phone, address, language preference, and profile photo from the Navbar
+- Chat with assigned servant (WhatsApp-style, live polling)
+- Star ratings and comments on resolved tickets
+- Browse announcements and barangay directory
+- Edit profile with avatar photo upload
 
-### Public Servant Flow
-- Dashboard showing assigned tickets with priority indicators and SLA deadlines
-- Reply to residents directly inside ticket chat
-- **Internal notes** — visible only to servants, shown in amber; auto-scroll and live polling
-- Escalate tickets with reason, mark in-progress / resolved
-- Update own availability status (Available / Busy / Offline) — reflected live in the Navbar
-- **Edit profile** — name, position, phone, password, and avatar photo
+### Servant Flow
+- Dashboard with assigned tickets, priority indicators, and SLA deadlines
+- Reply to residents in ticket chat
+- Internal notes (visible only to servants)
+- Escalate tickets, update status (in-progress / resolved)
+- Update availability (Available / Busy / Offline)
 
 ### Admin Flow
-- **Admin Panel** with six tabs: Overview · Tickets · Servants · SLA Breaches · Announcements · Directory
-- **Overview** — system stats, 7-day trend chart, status distribution, department breakdown, recent submissions feed, quick-action buttons
-- **Tickets** — searchable and filterable table by title, ticket number, resident name, and status
-- **Servants** — card grid with workload bar, availability badge, edit / remove actions
-- **SLA Breaches** — red-flagged overdue tickets with deadline and time-since info
-- **Announcements** — create / edit / delete announcements with Info / Alert / Event categories; toggle Draft vs Published
-- **Directory** — manage barangay officials, emergency services, and gov't offices; toggle Active / Hidden per entry
-- Add, edit, and remove public servants with department assignment and temporary password
+- Admin panel with tabs: Overview, Tickets, Servants, SLA Breaches, Announcements, Directory
+- System stats with 7-day trend chart and department breakdown
+- Manage servants (create, edit, remove with department assignment)
+- Manage announcements (Info / Alert / Event categories, draft/published)
+- Manage barangay directory (officials, emergency services, offices)
 
 ---
 
-## Mobile Installation (PWA)
+## Authentication
 
-The app is a Progressive Web App — install it directly from the browser, no app store required.
+| Role | Login Method | OTP Required |
+|------|-------------|-------------|
+| Citizen (CLIENT) | Email/phone + password | Yes (email + SMS) |
+| Citizen (CLIENT) | Firebase Phone Auth | No (Firebase handles verification) |
+| Servant | Email + password | No |
+| Admin | Email + password | No |
 
-### Step 1 — Generate icons (one-time, before building)
+OTP is sent to both **email** (via SMTP) and **phone** (SMS stub — wire to Semaphore/Twilio for production delivery).
 
-```bash
-cd frontend
+---
 
-# Option A: Use sharp to auto-generate icons from SVG
-npm install sharp --save-dev
-node scripts/create-icons.js
+## Department Routing
 
-# Option B: Manual
-# 1. Go to https://realfavicongenerator.net
-# 2. Upload frontend/public/icons/icon.svg
-# 3. Download the package
-# 4. Place icon-192.png and icon-512.png in frontend/public/icons/
-```
+| Department | Code | Handles |
+|------------|------|---------|
+| Mayor's Office | MAYORS | General inquiries, documents, clearances |
+| Municipal Engineering | ENGINEERING | Roads, floods, infrastructure |
+| MSWDO | MSWDO | Social welfare, PWD, senior citizens, 4Ps |
+| Rural Health Unit | RHU | Health, medical, immunization |
+| MPDO | MPDO | Land use, business permits, zoning |
+| MENRO | MENRO | Environment, logging, waste management |
+| PNP | PNP | Peace and order, crime reports |
+| Treasurer's Office | TREASURER | Tax, payments, clearances |
 
-### Step 2 — Build for production
+The AI classifier uses Claude to analyze concern text in any of the three supported languages and routes to the appropriate department.
 
-```bash
-cd frontend
-npm run build
-# Output: frontend/dist/
-```
+---
 
-### Step 3 — Serve with HTTPS (required for PWA install prompt)
+## API Endpoints
 
-```bash
-# Test locally
-npm run preview
-# Opens at http://localhost:4173
+### Auth
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register (returns OTP for citizens) |
+| POST | `/api/auth/unified-login` | Login (returns OTP for citizens, JWT for admin/servants) |
+| POST | `/api/auth/verify-auth-otp` | Verify 6-digit OTP after login/register |
+| POST | `/api/auth/resend-otp` | Resend auth OTP |
+| POST | `/api/auth/firebase/verify-phone` | Verify Firebase Phone Auth token |
+| POST | `/api/auth/forgot-password` | Request password reset code |
+| POST | `/api/auth/reset-password` | Reset password with code |
+| GET | `/api/auth/profile` | Get current profile |
+| PUT | `/api/auth/profile` | Update profile (multipart for avatar) |
 
-# On mobile (same WiFi network):
-# Find your PC's IP: run `ipconfig` (Windows) → look for IPv4 Address
-# Open http://192.168.x.x:4173 in Chrome on your phone
-```
+### Tickets
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/tickets` | Submit concern (multipart, up to 5 files) |
+| GET | `/api/tickets` | My tickets (paginated) |
+| GET | `/api/tickets/:id` | Ticket detail + messages |
+| POST | `/api/tickets/classify` | AI classify text |
+| GET | `/api/tickets/servant/assigned` | Servant's assigned tickets |
+| PATCH | `/api/tickets/:id/status` | Update status |
+| POST | `/api/tickets/:id/message` | Send message / internal note |
+| PATCH | `/api/tickets/:id/escalate` | Escalate ticket |
+| POST | `/api/tickets/:id/feedback` | Submit rating |
 
-> PWA install prompts require HTTPS in production. Use Nginx + Let's Encrypt, or Cloudflare Tunnel for quick testing.
+### Admin
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/stats` | Dashboard stats |
+| GET | `/api/admin/tickets` | All tickets (filterable) |
+| GET | `/api/admin/sla-breaches` | Overdue tickets |
 
-### Step 4 — Install on Android
-1. Open Chrome → navigate to your site URL
-2. Tap the **⋮** menu → **"Add to Home Screen"**
-3. Tap **Install** — the app icon appears on the home screen
+### Other
+| Resource | Endpoints |
+|----------|-----------|
+| Servants | `GET/POST/PUT/DELETE /api/servants` |
+| Announcements | `GET/POST/PUT/DELETE /api/announcements` |
+| Directory | `GET/POST/PUT/DELETE /api/directory` |
+| Notifications | `GET/PATCH /api/notifications` |
 
-### Step 5 — Install on iPhone / iPad
-1. Open Safari → navigate to your site URL
-2. Tap the **Share** button (box with arrow)
-3. Tap **"Add to Home Screen"** → **Add**
+---
+
+## SLA Policy
+
+| Priority | Deadline | Use Case |
+|----------|----------|----------|
+| URGENT | 4 hours | Emergencies, public safety |
+| NORMAL | 48 hours | Standard concerns |
+| LOW | 5 days | Minor requests, inquiries |
 
 ---
 
 ## Project Structure
 
 ```
-egov_v1/
-├── docker-compose.yml          # Full stack orchestration
-├── .env.example                # Environment template
-│
-├── backend/                    # Node.js + Express API
+egov/
+├── backend/
 │   ├── prisma/
-│   │   ├── schema.prisma       # Database models
-│   │   └── seed.js             # Demo data (departments, servants, users)
+│   │   ├── schema.prisma          # Database models
+│   │   └── seed.js                # Seed data
 │   ├── src/
 │   │   ├── controllers/
-│   │   │   ├── authController.js      # Login, register, profile update + avatar upload
-│   │   │   └── ticketController.js    # Tickets, messages, feedback, escalation
-│   │   ├── routes/
-│   │   │   ├── auth.js                # /api/auth
-│   │   │   ├── tickets.js             # /api/tickets
-│   │   │   ├── servants.js            # /api/servants
-│   │   │   ├── departments.js         # /api/departments
-│   │   │   ├── admin.js               # /api/admin
-│   │   │   ├── notifications.js       # /api/notifications
-│   │   │   ├── announcements.js       # /api/announcements
-│   │   │   └── directory.js           # /api/directory
-│   │   ├── middleware/
-│   │   │   ├── auth.js                # JWT verify, requireClient/Servant/Admin guards
-│   │   │   ├── upload.js              # Multer — ticket attachments + avatar upload
-│   │   │   └── errorHandler.js        # Global error middleware
-│   │   └── services/
-│   │       ├── classifier.js          # AI classifier HTTP client + local fallback
-│   │       └── notification.js        # Create in-app notifications
-│   └── Dockerfile
+│   │   │   ├── authController.js  # Auth, OTP, Firebase, profile
+│   │   │   └── ticketController.js
+│   │   ├── routes/                # Express routers
+│   │   ├── middleware/            # JWT, uploads, error handler
+│   │   ├── services/
+│   │   │   ├── classifier.js     # Claude AI classifier
+│   │   │   └── notification.js   # Email, SMS, in-app
+│   │   └── lib/
+│   │       ├── prisma.js         # Prisma client
+│   │       ├── socket.js         # Socket.IO
+│   │       └── firebase.js       # Firebase Admin SDK
+│   └── .env
 │
-├── ai-classifier/              # Python Flask NLP service
-│   ├── classifier.py           # Multi-lingual keyword classifier
-│   ├── app.py                  # REST API
-│   └── Dockerfile
+├── frontend/
+│   ├── public/
+│   │   └── site.webmanifest      # PWA manifest
+│   ├── src/
+│   │   ├── pages/                # 10 page components
+│   │   ├── components/           # Navbar, ProfileModal, ErrorBoundary
+│   │   ├── contexts/             # Auth, Language, Socket
+│   │   ├── lib/firebase.js       # Firebase client SDK
+│   │   ├── i18n/translations.js  # Trilingual strings
+│   │   └── api/client.js         # Axios + JWT interceptor
+│   └── .env
 │
-└── frontend/                   # React 18 + Vite + Tailwind CSS
-    ├── public/
-    │   └── icons/              # PWA icons (icon-192.png, icon-512.png)
-    ├── scripts/
-    │   └── create-icons.js     # PWA icon generator (uses sharp)
-    └── src/
-        ├── pages/
-        │   ├── LandingPage.jsx         # Hero + department map
-        │   ├── AuthPage.jsx            # Login / Register (+ servant toggle)
-        │   ├── ClientDashboard.jsx     # Resident home — stats, recent tickets, quick actions
-        │   ├── SubmitConcern.jsx       # 3-step concern form with file attachments
-        │   ├── TrackTicket.jsx         # Ticket list + chat detail (WhatsApp-style)
-        │   ├── ServantDashboard.jsx    # Assigned tickets + chat + internal notes
-        │   ├── AdminDashboard.jsx      # Admin panel — 6 tabs including Announcements & Directory
-        │   ├── AnnouncementsPage.jsx   # Public announcements feed (residents & servants)
-        │   └── DirectoryPage.jsx       # Barangay directory by category (residents & servants)
-        ├── components/
-        │   ├── Navbar.jsx              # Role-aware nav with profile dropdown + Edit Profile
-        │   ├── ProfileModal.jsx        # Edit profile: name, photo, phone, password
-        │   └── StatusBadge.jsx         # Status / priority pills
-        ├── contexts/
-        │   ├── AuthContext.jsx         # JWT auth state + updateUser / updateServant helpers
-        │   └── LanguageContext.jsx     # i18n context
-        ├── i18n/
-        │   └── translations.js         # EN / Filipino / Cebuano strings
-        └── api/
-            └── client.js               # Axios instance with JWT interceptor
+└── sql/                           # Manual DB setup files
+    ├── 01-schema.sql
+    ├── 02-seed-admin.sql
+    ├── 03-seed-servants.sql
+    └── 04-seed-citizens.sql
 ```
-
----
-
-## Department Routing
-
-| Department | Code | Meaning / Handles | Example Keywords |
-|------------|------|-------------------|-----------------|
-| Mayor's Office | MAYORS | The executive office of the local government. Handles general governance, official certifications, requests for the Mayor's endorsement, barangay clearances, and concerns that do not fall under a specific department. | mayor, document, clearance, certification |
-| Municipal Engineering Office | ENGINEERING | Responsible for the design, construction, and maintenance of public infrastructure. Handles complaints about roads, bridges, drainage systems, potholes, floods, and public works projects. | road, flood, bridge, drainage, pothole |
-| MSWDO | MSWDO | **Municipal Social Welfare and Development Office.** Provides social protection services to vulnerable sectors — Persons with Disabilities (PWD), senior citizens, solo parents, 4Ps (Pantawid Pamilyang Pilipino Program) beneficiaries, women, and children in need. | pwd, senior, 4ps, social welfare, child |
-| Rural Health Unit | RHU | The primary public health facility of the municipality. Handles concerns about medical consultations, medicines, vaccinations, disease outbreaks (dengue, COVID, etc.), maternal care, and referrals to hospitals. | health, medicine, vaccine, doctor, dengue |
-| MPDO | MPDO | **Municipal Planning and Development Office.** Oversees land use planning, zoning, business permits, building permits, and development projects within the municipality. | business permit, zoning, land use |
-| MENRO | MENRO | **Municipal Environment and Natural Resources Office.** Enforces environmental laws and handles concerns about illegal logging, garbage collection, pollution, waste management, and protection of natural resources. | environment, logging, garbage, pollution |
-| PNP | PNP | **Philippine National Police** — Aluguinsan Station. Handles peace and order concerns including crimes, theft, drugs, illegal activities, traffic enforcement, and public safety incidents. | police, crime, theft, drugs, safety |
-| Treasurer's Office | TREASURER | Manages the collection of local taxes, fees, and charges. Handles real property tax payments, business tax, community tax certificates (cedula), tax clearances, and other financial transactions with the LGU. | tax, payment, clearance, cedula |
-
-The AI classifier scores each department using multilingual keyword sets (EN / Filipino / Cebuano) and routes the ticket accordingly. If the Flask service is unavailable, the backend falls back to its own local keyword scorer.
-
----
-
-## API Reference
-
-### Auth
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register` | Register new resident |
-| POST | `/api/auth/login` | Resident / admin login |
-| POST | `/api/auth/servant/login` | Public servant login |
-| GET | `/api/auth/profile` | Get current user profile |
-| PUT | `/api/auth/profile` | Update profile — name, phone, address, language, position, password, avatar (`multipart/form-data`) |
-
-### Tickets
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/tickets` | Submit concern (`multipart/form-data`, up to 5 attachments) |
-| GET | `/api/tickets` | Get my tickets (resident, paginated) |
-| GET | `/api/tickets/:id` | Ticket detail + messages (servants see internal notes) |
-| POST | `/api/tickets/classify` | AI classify text → department |
-| GET | `/api/tickets/servant/assigned` | Servant's assigned tickets |
-| PATCH | `/api/tickets/:id/status` | Update ticket status (servant) |
-| POST | `/api/tickets/:id/message` | Add message or internal note (servant only for internal) |
-| PATCH | `/api/tickets/:id/assign` | Servant self-assigns a ticket |
-| PATCH | `/api/tickets/:id/escalate` | Escalate with reason |
-| POST | `/api/tickets/:id/feedback` | Submit star rating + comment (resident) |
-
-### Admin
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/admin/stats` | Overview stats + chart data |
-| GET | `/api/admin/tickets` | All tickets (paginated, filterable) |
-| GET | `/api/admin/sla-breaches` | Tickets past SLA deadline |
-
-### Servants
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/servants` | List all servants (admin) |
-| POST | `/api/servants` | Create new servant (admin) |
-| PUT | `/api/servants/:id` | Update servant details (admin) |
-| DELETE | `/api/servants/:id` | Remove servant, returns tickets to Pending (admin) |
-| GET | `/api/servants/stats` | Servant's own performance stats |
-| PATCH | `/api/servants/status` | Update own availability status |
-
-### Announcements
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/announcements` | Published announcements (public, optional `?category=`) |
-| GET | `/api/announcements/all` | All announcements including drafts (admin only) |
-| GET | `/api/announcements/:id` | Single announcement (public) |
-| POST | `/api/announcements` | Create announcement (admin) |
-| PUT | `/api/announcements/:id` | Update announcement (admin) |
-| DELETE | `/api/announcements/:id` | Delete announcement (admin) |
-
-### Directory
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/directory` | Active directory entries (public, optional `?category=`) |
-| GET | `/api/directory/all` | All entries including hidden (admin only) |
-| POST | `/api/directory` | Add directory entry (admin) |
-| PUT | `/api/directory/:id` | Update entry (admin) |
-| DELETE | `/api/directory/:id` | Remove entry (admin) |
-
-### Notifications
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/notifications` | Get my notifications (resident) |
-| PATCH | `/api/notifications/:id/read` | Mark notification as read |
-| PATCH | `/api/notifications/read-all` | Mark all as read |
-
----
-
-## SLA Policy
-
-**SLA** stands for **Service Level Agreement** — a formal commitment that defines the maximum time within which a government office must respond to or resolve a citizen's concern. It sets clear accountability standards so that residents know when to expect action, and administrators can track which tickets are overdue.
-
-In this system, the SLA clock starts the moment a ticket is submitted. Each ticket is assigned a priority level, and the corresponding deadline is calculated automatically:
-
-| Priority | Response Deadline | When to Use |
-|----------|-------------------|-------------|
-| URGENT | 4 hours | Life-threatening situations, public safety emergencies, active disasters |
-| NORMAL | 48 hours (2 days) | Standard citizen concerns requiring timely but non-emergency attention |
-| LOW | 120 hours (5 days) | Minor requests, informational inquiries, non-time-sensitive reports |
-
-Tickets past their SLA deadline are flagged red in the **Admin Panel → SLA Breaches** tab. The tab badge shows the live count of overdue tickets so administrators can immediately identify and act on bottlenecks.
-
----
-
-## Chat & Messaging
-
-Messages are scoped to tickets and stored in the `TicketMessage` table with three sender types:
-
-| Sender Type | Visible To | Style |
-|-------------|------------|-------|
-| `CLIENT` | Everyone | Primary-blue bubble (right) |
-| `SERVANT` | Everyone | Indigo bubble (right in servant view, left in client view) |
-| `SYSTEM` | Everyone | Centered italic pill (gray) |
-| Internal Note (`isInternal: true`) | Servants only | Amber card with 🔒 badge |
-
-Both the resident (TrackTicket) and servant (ServantDashboard) views auto-scroll to the latest message and poll for new messages every 8 seconds.
 
 ---
 
 ## Security
 
-- JWT authentication with 7-day expiry
+- JWT authentication (7-day expiry)
 - bcrypt password hashing (cost factor 10)
-- Rate limiting (200 req / 15 min global; 20 req / 15 min for auth routes)
+- OTP verification for citizen accounts (email + phone)
+- Rate limiting (200 req/15 min global, 20 req/15 min auth)
 - Helmet.js security headers
 - CORS with origin whitelist
-- File upload validation (type + size, max 10 MB for tickets; 2 MB for avatars)
-- Role-based access control (CLIENT · SERVANT · ADMIN)
-- Compliant with **RA 10173 (Data Privacy Act of the Philippines)**
+- File upload validation (type + size limits)
+- Role-based access control (CLIENT / SERVANT / ADMIN)
 
 ---
 
-## Multi-Language Support
+## Mobile Support
 
-All UI strings and AI keyword sets support three languages:
-
-| Code | Language | Notes |
-|------|----------|-------|
-| `en` | English | Default |
-| `fil` | Filipino | Tagalog-based national language |
-| `ceb` | Cebuano | Regional language of Cebu |
+- Responsive design with touch-friendly targets (44px minimum)
+- iOS auto-zoom prevention (16px input fonts)
+- Safe-area inset support for notched phones
+- PWA installable from browser (Android + iOS)
+- Active touch states on all interactive elements
 
 ---
 
-## Roadmap
-
-- [ ] React Native mobile app (Android + iOS) with biometrics
-- [ ] Firebase push notifications
-- [ ] Twilio SMS for status updates
-- [ ] HuggingFace NLP model (replace keyword classifier)
-- [ ] Appointment scheduling system
-- [ ] Barangay-level reports and exports
-- [ ] E-signature for official documents
-- [x] PWA — installable on Android and iOS via browser
-- [x] Profile editing with avatar photo upload
-- [x] Barangay announcements (admin publish, public view)
-- [x] Barangay directory (officials, emergency, gov't services)
-- [x] WhatsApp-style in-ticket chat with auto-scroll and live polling
-- [x] Servant internal notes (visible only to servants)
-- [x] Admin panel — Announcements & Directory management tabs
-
----
-
-*Developed for the Municipality of Aluguinsan, Province of Cebu, Philippines*
-*Compliant with DICT digitization standards and RA 10173*
+*Municipality of Aluguinsan, Province of Cebu, Philippines*

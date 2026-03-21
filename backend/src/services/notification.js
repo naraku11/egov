@@ -210,6 +210,28 @@ export const sendTicketAssignedEmail = async (to, servantName, ticket) => {
   await sendEmailNotification(to, `[E-Gov] Ticket ${ticket.ticketNumber} Assigned`, html);
 };
 
+// ─── OTP Email ───────────────────────────────────────────────────────────────
+
+/**
+ * Sends an OTP verification code via email.
+ *
+ * @param {string} to   - Recipient email address
+ * @param {string} name - Recipient name
+ * @param {string} code - 6-digit OTP code
+ */
+export const sendOtpEmail = async (to, name, code) => {
+  const html = emailTemplate(
+    'Verification Code',
+    `<p>Hi <strong>${name}</strong>,</p>
+     <p>Your one-time verification code is:</p>
+     <div style="margin:24px 0;text-align:center">
+       <span style="display:inline-block;background:#f3f4f6;padding:16px 32px;border-radius:8px;font-size:32px;font-weight:700;letter-spacing:8px;color:#1e3a5f">${code}</span>
+     </div>
+     <p style="color:#6b7280;font-size:13px">This code expires in 5 minutes. If you didn't request this, you can safely ignore this message.</p>`
+  );
+  await sendEmailNotification(to, '[E-Gov] Verification Code', html);
+};
+
 // ─── SMS (stub) ──────────────────────────────────────────────────────────────
 
 /**

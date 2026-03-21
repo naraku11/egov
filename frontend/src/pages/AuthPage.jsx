@@ -24,14 +24,15 @@
  * drop the user on the correct form automatically.
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { Eye, EyeOff, Phone, Mail, Lock, User, MapPin, ArrowLeft, KeyRound } from 'lucide-react';
+import { Eye, EyeOff, Phone, Mail, Lock, User, MapPin, ArrowLeft, KeyRound, Smartphone } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useLanguage } from '../contexts/LanguageContext.jsx';
 import { barangays } from '../i18n/translations.js';
+import { auth, RecaptchaVerifier, signInWithPhoneNumber } from '../lib/firebase.js';
 
 /**
  * AuthPage component.
@@ -68,6 +69,14 @@ export default function AuthPage() {
   // ── Registration form state ─────────────────────────────────────────────────
   const [regData, setRegData] = useState({ name: '', email: '', phone: '', password: '', confirmPassword: '', barangay: '', address: '' });
 
+  // ── Auth OTP verification state (for citizens after login/register) ────────
+  /** User ID returned by backend after credentials are validated */
+  const [pendingUserId, setPendingUserId]     = useState(null);
+  /** Which channels the OTP was sent to */
+  const [otpSentTo, setOtpSentTo]             = useState({ email: false, phone: false });
+  /** 6-digit auth OTP code entered by user */
+  const [authOtpCode, setAuthOtpCode]         = useState('');
+
   // ── Forgot-password multi-step state ────────────────────────────────────────
   /** Current step of the password-reset flow: 1 = request OTP, 2 = verify OTP + set new password */
   const [resetStep, setResetStep]             = useState(1);
@@ -81,6 +90,118 @@ export default function AuthPage() {
   const [resetConfirm, setResetConfirm]       = useState('');
   /** Toggle plain-text visibility for the new-password field in step 2 */
   const [showResetPw, setShowResetPw]         = useState(false);
+
+  // ── Phone OTP (Firebase) state ────────────────────────────────────────────
+  /** Phone number input for OTP login */
+  const [otpPhone, setOtpPhone]               = useState('');
+  /** Current step: 1 = enter phone, 2 = enter OTP code */
+  const [otpStep, setOtpStep]                 = useState(1);
+  /** Firebase confirmation result for OTP verification */
+  const confirmationResultRef                 = useRef(null);
+  /** 6-digit OTP code entered by user */
+  const [otpCode, setOtpCode]                 = useState('');
+  /** reCAPTCHA verifier instance */
+  const recaptchaRef                          = useRef(null);
+
+  /**
+   * Initializes the invisible reCAPTCHA verifier for Firebase Phone Auth.
+   * Must be called before signInWithPhoneNumber.
+   */
+  const setupRecaptcha = useCallback(() => {
+    if (recaptchaRef.current) return;
+    try {
+      recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        size: 'invisible',
+        callback: () => { /* reCAPTCHA solved */ },
+      });
+    } catch (err) {
+      console.error('reCAPTCHA setup error:', err);
+    }
+  }, []);
+
+  // Set up reCAPTCHA when the phone-otp tab is active
+  useEffect(() => {
+    if (tab === 'phone-otp') {
+      // Small delay to ensure the DOM element exists
+      const timer = setTimeout(setupRecaptcha, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [tab, setupRecaptcha]);
+
+  /**
+   * Step 1: Send SMS OTP via Firebase.
+   * Converts local PH format (09xx) to international (+639xx).
+   */
+  const handleSendOtp = async (e) => {
+    e.preventDefault();
+    if (!otpPhone) return toast.error('Enter your phone number');
+
+    // Convert 09xx to +639xx for Firebase
+    let phoneForFirebase = otpPhone.trim();
+    if (phoneForFirebase.startsWith('09')) {
+      phoneForFirebase = '+63' + phoneForFirebase.slice(1);
+    } else if (!phoneForFirebase.startsWith('+')) {
+      phoneForFirebase = '+63' + phoneForFirebase;
+    }
+
+    setLoading(true);
+    try {
+      setupRecaptcha();
+      const confirmation = await signInWithPhoneNumber(auth, phoneForFirebase, recaptchaRef.current);
+      confirmationResultRef.current = confirmation;
+      setOtpStep(2);
+      toast.success('OTP sent! Check your phone.');
+    } catch (err) {
+      console.error('OTP send error:', err);
+      if (err.code === 'auth/too-many-requests') {
+        toast.error('Too many attempts. Try again later.');
+      } else if (err.code === 'auth/invalid-phone-number') {
+        toast.error('Invalid phone number format');
+      } else {
+        toast.error(err.message || 'Failed to send OTP');
+      }
+      // Reset reCAPTCHA on error
+      if (recaptchaRef.current) {
+        try { recaptchaRef.current.clear(); } catch { /* ignore */ }
+        recaptchaRef.current = null;
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Step 2: Verify the OTP code with Firebase, then exchange the Firebase
+   * ID token for our own JWT via the backend.
+   */
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    if (!otpCode || otpCode.length !== 6) return toast.error('Enter the 6-digit code');
+    if (!confirmationResultRef.current) return toast.error('Please request OTP first');
+
+    setLoading(true);
+    try {
+      // Verify OTP with Firebase
+      const result = await confirmationResultRef.current.confirm(otpCode);
+      const idToken = await result.user.getIdToken();
+
+      // Exchange Firebase token for our JWT
+      const { data } = await api.post('/auth/firebase/verify-phone', { idToken });
+
+      loginUser(data.token, data.user);
+      toast.success(`Welcome, ${data.user.name}!`);
+      navigate(data.user.role === 'ADMIN' ? '/admin' : '/dashboard');
+    } catch (err) {
+      console.error('OTP verify error:', err);
+      if (err.code === 'auth/invalid-verification-code') {
+        toast.error('Invalid OTP code. Please try again.');
+      } else {
+        toast.error(err.response?.data?.error || err.message || 'Verification failed');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   /**
    * Handles the Login form submission.
@@ -98,16 +219,25 @@ export default function AuthPage() {
         emailOrPhone: loginData.emailOrPhone,
         password: loginData.password,
       });
+
+      // Citizens require OTP verification
+      if (data.requiresOtp) {
+        setPendingUserId(data.userId);
+        setOtpSentTo(data.sentTo);
+        setAuthOtpCode('');
+        setTab('verify-otp');
+        const channels = [data.sentTo.email && 'email', data.sentTo.phone && 'phone'].filter(Boolean).join(' & ');
+        toast.success(`OTP sent to your ${channels}`);
+        return;
+      }
+
       if (data.type === 'servant') {
-        // Store servant JWT and profile, then go to the servant dashboard
         loginServant(data.token, data.servant);
         toast.success(`Welcome, ${data.servant.name}!`);
         navigate('/servant');
       } else {
-        // Store resident/admin JWT and profile
         loginUser(data.token, data.user);
         toast.success(`Welcome back, ${data.user.name}!`);
-        // Admins go to /admin; regular residents go to /dashboard
         navigate(data.user.role === 'ADMIN' ? '/admin' : '/dashboard');
       }
     } catch (err) {
@@ -190,12 +320,62 @@ export default function AuthPage() {
         barangay: regData.barangay,
         address: regData.address || undefined,   // omit if empty
       });
-      // Immediately log the new user in without a separate login step
+
+      // Citizens must verify OTP before accessing the system
+      if (data.requiresOtp) {
+        setPendingUserId(data.userId);
+        setOtpSentTo(data.sentTo);
+        setAuthOtpCode('');
+        setTab('verify-otp');
+        const channels = [data.sentTo.email && 'email', data.sentTo.phone && 'phone'].filter(Boolean).join(' & ');
+        toast.success(`Verify your account! OTP sent to your ${channels}`);
+        return;
+      }
+
       loginUser(data.token, data.user);
       toast.success('Registration successful! Welcome!');
       navigate('/dashboard');
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err.response?.data?.error || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Verifies the 6-digit auth OTP after login or registration.
+   */
+  const handleVerifyAuthOtp = async (e) => {
+    e.preventDefault();
+    if (!authOtpCode || authOtpCode.length !== 6) return toast.error('Enter the 6-digit code');
+    setLoading(true);
+    try {
+      const { data } = await api.post('/auth/verify-auth-otp', {
+        userId: pendingUserId,
+        otp: authOtpCode,
+      });
+      loginUser(data.token, data.user);
+      toast.success(`Welcome, ${data.user.name}!`);
+      navigate(data.user.role === 'ADMIN' ? '/admin' : '/dashboard');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Invalid OTP');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Resends the auth OTP to the user's email/phone.
+   */
+  const handleResendAuthOtp = async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.post('/auth/resend-otp', { userId: pendingUserId });
+      setOtpSentTo(data.sentTo);
+      const channels = [data.sentTo.email && 'email', data.sentTo.phone && 'phone'].filter(Boolean).join(' & ');
+      toast.success(`OTP resent to your ${channels}`);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to resend OTP');
     } finally {
       setLoading(false);
     }
@@ -210,6 +390,9 @@ export default function AuthPage() {
           Back to Home
         </Link>
       </div>
+
+      {/* Invisible reCAPTCHA container for Firebase Phone Auth */}
+      <div id="recaptcha-container"></div>
 
       <div className="flex-1 flex items-center justify-center p-4">
         <div className="w-full max-w-md">
@@ -300,6 +483,22 @@ export default function AuthPage() {
                       Forgot password?
                     </button>
                   </div>
+                  {/* Divider */}
+                  <div className="relative my-2">
+                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div>
+                    <div className="relative flex justify-center text-xs"><span className="bg-white px-3 text-gray-400">or</span></div>
+                  </div>
+
+                  {/* Login with Phone OTP button */}
+                  <button
+                    type="button"
+                    onClick={() => { setTab('phone-otp'); setOtpStep(1); setOtpCode(''); }}
+                    className="w-full py-2.5 border-2 border-primary-200 text-primary-600 rounded-lg font-medium text-sm hover:bg-primary-50 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    Login with Phone OTP
+                  </button>
+
                   <p className="text-center text-sm text-gray-600">
                     {t('dontHaveAccount')}{' '}
                     <button type="button" onClick={() => setTab('register')} className="text-primary-600 font-medium hover:underline">
@@ -307,6 +506,148 @@ export default function AuthPage() {
                     </button>
                   </p>
                 </form>
+              )}
+
+              {/* ── Phone OTP Login Flow ───────────────────────────────────────
+                  Step 1: Enter phone → Firebase sends SMS OTP.
+                  Step 2: Enter 6-digit OTP → verified and logged in.
+              ──────────────────────────────────────────────────────────────── */}
+              {tab === 'phone-otp' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setTab('login'); setOtpStep(1); setOtpCode(''); }}
+                      className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <ArrowLeft className="w-4 h-4 text-gray-500" />
+                    </button>
+                    <h2 className="text-lg font-semibold text-gray-900">
+                      {otpStep === 1 ? 'Phone Login' : 'Enter OTP Code'}
+                    </h2>
+                  </div>
+
+                  {otpStep === 1 ? (
+                    <form onSubmit={handleSendOtp} className="space-y-4">
+                      <p className="text-sm text-gray-500">
+                        We'll send a one-time code to your phone number via SMS.
+                      </p>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                        <div className="relative">
+                          <Phone className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                          <input
+                            type="tel"
+                            className="input-field pl-10"
+                            placeholder="09xxxxxxxxx"
+                            value={otpPhone}
+                            onChange={e => setOtpPhone(e.target.value)}
+                            required
+                          />
+                        </div>
+                      </div>
+                      <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
+                        {loading ? 'Sending OTP...' : 'Send OTP'}
+                      </button>
+                    </form>
+                  ) : (
+                    <form onSubmit={handleVerifyOtp} className="space-y-4">
+                      <p className="text-sm text-gray-500">
+                        Enter the 6-digit code sent to <span className="font-medium text-gray-700">{otpPhone}</span>
+                      </p>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">OTP Code</label>
+                        <div className="relative">
+                          <KeyRound className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={6}
+                            className="input-field pl-10 tracking-widest font-mono"
+                            placeholder="000000"
+                            value={otpCode}
+                            onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                            required
+                          />
+                        </div>
+                      </div>
+                      <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
+                        {loading ? 'Verifying...' : 'Verify & Login'}
+                      </button>
+                      <div className="text-center">
+                        <button
+                          type="button"
+                          onClick={() => { setOtpStep(1); setOtpCode(''); }}
+                          className="text-sm text-gray-500 hover:text-primary-600"
+                        >
+                          Use a different number
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
+
+              {/* ── Auth OTP Verification ─────────────────────────────────────
+                  Shown after login or registration for citizen accounts.
+                  The user must enter the 6-digit OTP sent to email/phone.
+              ──────────────────────────────────────────────────────────────── */}
+              {tab === 'verify-otp' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setTab('login'); setPendingUserId(null); setAuthOtpCode(''); }}
+                      className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <ArrowLeft className="w-4 h-4 text-gray-500" />
+                    </button>
+                    <h2 className="text-lg font-semibold text-gray-900">Verify Your Identity</h2>
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p className="text-sm text-blue-700">
+                      A 6-digit verification code has been sent to:
+                    </p>
+                    <ul className="mt-1 text-sm font-medium text-blue-800">
+                      {otpSentTo.email && <li className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Your email address</li>}
+                      {otpSentTo.phone && <li className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" /> Your phone number</li>}
+                    </ul>
+                  </div>
+
+                  <form onSubmit={handleVerifyAuthOtp} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Verification Code</label>
+                      <div className="relative">
+                        <KeyRound className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          className="input-field pl-10 tracking-widest font-mono text-center text-lg"
+                          placeholder="000000"
+                          value={authOtpCode}
+                          onChange={e => setAuthOtpCode(e.target.value.replace(/\D/g, ''))}
+                          autoFocus
+                          required
+                        />
+                      </div>
+                    </div>
+                    <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
+                      {loading ? 'Verifying...' : 'Verify & Continue'}
+                    </button>
+                    <div className="text-center">
+                      <button
+                        type="button"
+                        onClick={handleResendAuthOtp}
+                        disabled={loading}
+                        className="text-sm text-gray-500 hover:text-primary-600"
+                      >
+                        Didn't receive the code? Resend
+                      </button>
+                    </div>
+                  </form>
+                </div>
               )}
 
               {/* ── Forgot Password Flow ──────────────────────────────────────

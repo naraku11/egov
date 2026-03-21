@@ -84,7 +84,7 @@ export default function LandingPage() {
                   <button
                     key={lang.code}
                     onClick={() => changeLanguage(lang.code)}
-                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                    className={`px-4 py-2 rounded-full text-xs font-medium transition-all ${
                       language === lang.code
                         ? 'bg-white text-primary-800 shadow'
                         : 'bg-white/20 text-white/80 hover:bg-white/30'
@@ -216,7 +216,7 @@ export default function LandingPage() {
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl font-bold text-gray-900 text-center mb-12">How It Works</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8">
+          <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8">
             {[
               { step: '01', icon: '📝', title: 'Submit Concern', desc: 'Describe your concern in your preferred language via text or voice.' },
               { step: '02', icon: '🤖', title: 'AI Classification', desc: 'Our AI instantly routes your concern to the right department.' },
@@ -251,7 +251,7 @@ export default function LandingPage() {
           <h2 className="text-3xl font-bold text-gray-900 text-center mb-12">Department Routing Map</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {DEPARTMENTS.map(dept => (
-              <div key={dept.name} className="bg-white rounded-xl p-5 border border-gray-100 hover:shadow-md transition-shadow">
+              <div key={dept.name} className="bg-white rounded-xl p-5 border border-gray-100 hover:shadow-md active:shadow-sm transition-shadow">
                 {/* Department colour-coded label badge */}
                 <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg text-sm font-medium mb-3 ${dept.color}`}>
                   <span>{dept.icon}</span>

@@ -268,34 +268,50 @@ async function main() {
   console.log('✅ Admin user created');
 
   // ---------------------------------------------------------------------------
-  // Step 4 — Sample resident account
+  // Step 4 — Sample citizen / resident accounts
   //
-  // A demo CLIENT account representing a typical Aluguinsan resident.  Used
-  // for developer testing, UI demos, and end-to-end test suites.  Existing
-  // record is not overwritten on re-seed.
+  // Demo CLIENT accounts representing typical Aluguinsan residents from
+  // different barangays. Used for testing, UI demos, and end-to-end suites.
+  // All share the password "resident123". Existing records are not overwritten.
   // ---------------------------------------------------------------------------
-  const residentPassword = await bcrypt.hash('resident123', 10);  // Resident demo password
-  await prisma.user.upsert({
-    where: { email: 'juan.delacruz@example.com' },
-    update: {},  // Do not overwrite an existing resident account on re-seed
-    create: {
-      name:       'Juan Dela Cruz',
-      email:      'juan.delacruz@example.com',
-      phone:      '09171234567',          // Sample PH mobile number
-      barangay:   'Cabigohan',            // Barangay where the sample resident lives
-      address:    'Purok 1, Cabigohan',   // Full address within the barangay
-      password:   residentPassword,
-      role:       'CLIENT',               // Standard resident role with no elevated privileges
-      isVerified: true,                   // Pre-verified for demo convenience
-    },
-  });
-  console.log('✅ Sample resident created');
+  const residentPassword = await bcrypt.hash('resident123', 10);
+
+  const citizens = [
+    { name: 'Juan Dela Cruz',     email: 'juan.delacruz@example.com',     phone: '09171234567', barangay: 'Cabigohan',      address: 'Purok 1, Cabigohan' },
+    { name: 'Maria Clara Santos', email: 'maria.clara@example.com',       phone: '09181234568', barangay: 'Poblacion',       address: 'Purok 3, Poblacion' },
+    { name: 'Pedro Penduko',      email: 'pedro.penduko@example.com',     phone: '09191234569', barangay: 'Kantabogon',      address: 'Sitio Lawis, Kantabogon' },
+    { name: 'Rosa Magtanggol',    email: 'rosa.magtanggol@example.com',   phone: '09201234570', barangay: 'Lawaan',          address: 'Purok 2, Lawaan' },
+    { name: 'Andres Bonifacio',   email: 'andres.bonifacio@example.com',  phone: '09211234571', barangay: 'Ta-al',           address: 'Purok 5, Ta-al' },
+    { name: 'Gabriela Silang',    email: 'gabriela.silang@example.com',   phone: '09221234572', barangay: 'Compostela',      address: 'Purok 1, Compostela' },
+    { name: 'Emilio Jacinto',     email: 'emilio.jacinto@example.com',    phone: '09231234573', barangay: 'Punay',           address: 'Sitio Centro, Punay' },
+    { name: 'Josefa Llanes',      email: 'josefa.llanes@example.com',     phone: '09241234574', barangay: 'Rosario',         address: 'Purok 4, Rosario' },
+    { name: 'Apolinario Mabini',  email: 'apolinario.mabini@example.com', phone: '09251234575', barangay: 'Dumlog',          address: 'Purok 6, Dumlog' },
+    { name: 'Tandang Sora',       email: 'tandang.sora@example.com',      phone: '09261234576', barangay: 'San Vicente',     address: 'Purok 2, San Vicente' },
+  ];
+
+  for (const c of citizens) {
+    await prisma.user.upsert({
+      where: { email: c.email },
+      update: {},
+      create: {
+        name:       c.name,
+        email:      c.email,
+        phone:      c.phone,
+        barangay:   c.barangay,
+        address:    c.address,
+        password:   residentPassword,
+        role:       'CLIENT',
+        isVerified: true,
+      },
+    });
+    console.log(`✅ Citizen: ${c.name}`);
+  }
 
   // Print a summary of default credentials for developer reference
   console.log('\n🎉 Seeding complete!');
   console.log('👤 Admin: admin@aluguinsan.gov.ph / admin123');
-  console.log('👤 Resident: juan.delacruz@example.com / resident123');
-  console.log('👤 Servant example: maria.santos@aluguinsan.gov.ph / servant123');
+  console.log('👤 Citizens (10): juan.delacruz@example.com, maria.clara@example.com, ... / resident123');
+  console.log('👤 Servants (11): maria.santos@aluguinsan.gov.ph, ... / servant123');
 }
 
 // Run the seed and ensure the Prisma client is always disconnected afterwards,

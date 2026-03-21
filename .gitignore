@@ -12,7 +12,12 @@ ai-classifier/venv/
 # Environment files — NEVER commit real secrets
 .env
 backend/.env
+frontend/.env
 *.env.local
+
+# Firebase service account key — NEVER commit
+firebase-service-account.json
+backend/firebase-service-account.json
 
 # Prisma — migration_lock.toml MUST be committed so `prisma migrate deploy` works
 # backend/prisma/migrations/migration_lock.toml

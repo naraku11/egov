@@ -287,10 +287,10 @@ export default function SubmitConcern() {
                       key={cat.value}
                       type="button"
                       onClick={() => setForm(f => ({ ...f, category: cat.value }))}
-                      className={`p-2.5 rounded-lg border text-left text-sm transition-all ${
+                      className={`p-3 rounded-lg border text-left text-sm transition-all ${
                         form.category === cat.value
                           ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium'
-                          : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                          : 'border-gray-200 text-gray-700 hover:border-gray-300 active:bg-gray-50'
                       }`}
                     >
                       {getCategoryLabel(cat.value)}
@@ -307,11 +307,11 @@ export default function SubmitConcern() {
                   <button
                     type="button"
                     onClick={isRecording ? stopVoice : startVoice}
-                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-colors ${
-                      isRecording ? 'bg-red-100 text-red-600 pulse-ring' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg transition-colors ${
+                      isRecording ? 'bg-red-100 text-red-600 pulse-ring' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 active:bg-gray-300'
                     }`}
                   >
-                    {isRecording ? <><MicOff className="w-3.5 h-3.5" /> Stop</> : <><Mic className="w-3.5 h-3.5" /> Voice</>}
+                    {isRecording ? <><MicOff className="w-4 h-4" /> Stop</> : <><Mic className="w-4 h-4" /> Voice</>}
                   </button>
                 </div>
                 <textarea
@@ -334,10 +334,10 @@ export default function SubmitConcern() {
                       key={opt.value}
                       type="button"
                       onClick={() => setForm(f => ({ ...f, priority: opt.value }))}
-                      className={`flex-1 p-2.5 rounded-lg border-2 text-center transition-all ${
+                      className={`flex-1 p-3 rounded-lg border-2 text-center transition-all ${
                         form.priority === opt.value
                           ? `border-current bg-opacity-10 ${opt.color} font-semibold`
-                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                          : 'border-gray-200 text-gray-600 hover:border-gray-300 active:bg-gray-50'
                       }`}
                     >
                       <p className="text-sm font-medium">{opt.label}</p>

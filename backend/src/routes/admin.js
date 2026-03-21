@@ -15,6 +15,7 @@
  */
 
 import { Router } from 'express';
+import bcrypt from 'bcryptjs';
 import prisma from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 
@@ -389,6 +390,118 @@ router.get('/sla-breaches', authenticate, requireAdmin, async (req, res, next) =
       orderBy: { slaDeadline: 'asc' },
     });
     res.json(tickets);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /admin/users/:id
+// ---------------------------------------------------------------------------
+/**
+ * Updates a citizen's profile fields.
+ *
+ * Supports: name, email, phone, barangay, address, isVerified.
+ * If `password` is provided, it is bcrypt-hashed before storage.
+ *
+ * @name PUT /admin/users/:id
+ * @access Admin
+ */
+router.put('/users/:id', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name, email, phone, barangay, address, isVerified, password } = req.body;
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user || user.role !== 'CLIENT') {
+      return res.status(404).json({ error: 'Citizen not found' });
+    }
+
+    const data = {};
+    if (name !== undefined) data.name = name;
+    if (email !== undefined) data.email = email || null;
+    if (phone !== undefined) data.phone = phone || null;
+    if (barangay !== undefined) data.barangay = barangay;
+    if (address !== undefined) data.address = address || null;
+    if (isVerified !== undefined) data.isVerified = isVerified;
+    if (password) data.password = await bcrypt.hash(password, 10);
+
+    const updated = await prisma.user.update({ where: { id }, data });
+    const { password: _, ...result } = updated;
+    res.json(result);
+  } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'Email or phone already in use by another account' });
+    }
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /admin/users/:id
+// ---------------------------------------------------------------------------
+/**
+ * Permanently deletes a citizen account and all associated data.
+ *
+ * Cascading deletes handle notifications. Tickets are preserved but the
+ * userId reference is cleared so admin records are not lost.
+ *
+ * @name DELETE /admin/users/:id
+ * @access Admin
+ */
+router.delete('/users/:id', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user || user.role !== 'CLIENT') {
+      return res.status(404).json({ error: 'Citizen not found' });
+    }
+
+    // Delete notifications first (FK constraint)
+    await prisma.notification.deleteMany({ where: { userId: id } });
+
+    // Delete the user — tickets use ON DELETE RESTRICT, so we nullify first
+    // Check if there are associated tickets
+    const ticketCount = await prisma.ticket.count({ where: { userId: id } });
+    if (ticketCount > 0) {
+      return res.status(400).json({
+        error: `Cannot delete: this citizen has ${ticketCount} ticket(s). Archive the account instead.`,
+      });
+    }
+
+    await prisma.user.delete({ where: { id } });
+    res.json({ message: 'Citizen deleted successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /admin/users/:id/archive
+// ---------------------------------------------------------------------------
+/**
+ * Archives (deactivates) a citizen account by setting isVerified to false.
+ * The account data is preserved but the citizen can no longer log in.
+ *
+ * @name PATCH /admin/users/:id/archive
+ * @access Admin
+ */
+router.patch('/users/:id/archive', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user || user.role !== 'CLIENT') {
+      return res.status(404).json({ error: 'Citizen not found' });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: { isVerified: !user.isVerified },
+    });
+    const { password: _, ...result } = updated;
+    res.json(result);
   } catch (err) {
     next(err);
   }

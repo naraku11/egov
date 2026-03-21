@@ -21,7 +21,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import path from 'path';
-import { sendWelcomeEmail, sendResetCodeEmail } from '../services/notification.js';
+import { sendWelcomeEmail, sendResetCodeEmail, sendOtpEmail, sendSmsNotification } from '../services/notification.js';
+import { getFirebaseAuth } from '../lib/firebase.js';
 
 /**
  * Creates a signed JWT for the given entity.
@@ -39,8 +40,42 @@ const generateToken = (id, type = 'user') => {
 // In-memory OTP store: phone → { otp, expiresAt }  (use Redis in production)
 const otpStore = new Map();
 
+// In-memory auth-OTP store: userId → { otp, expiresAt, type }  (login/register verification)
+const authOtpStore = new Map();
+
 // In-memory password-reset token store: emailOrPhone → { code, userId, expiresAt }
 const resetStore = new Map();
+
+/**
+ * Generates a 6-digit OTP and sends it to the user's email and/or phone.
+ * Stores the OTP keyed by userId for later verification.
+ *
+ * @param {string} userId - The user's database ID.
+ * @param {object} user   - User record with { name, email, phone }.
+ * @param {string} type   - 'login' or 'register'.
+ * @returns {{ sentTo: { email: boolean, phone: boolean } }}
+ */
+const generateAndSendAuthOtp = (userId, user, type) => {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  authOtpStore.set(userId, { otp, expiresAt: Date.now() + 5 * 60 * 1000, type });
+
+  const sentTo = { email: false, phone: false };
+
+  // Send to email via SMTP
+  if (user.email) {
+    sendOtpEmail(user.email, user.name, otp);
+    sentTo.email = true;
+  }
+
+  // Send to phone via SMS (stub — wire to Semaphore/Twilio for real delivery)
+  if (user.phone) {
+    sendSmsNotification(user.phone, `[E-Gov Aluguinsan] Your verification code is: ${otp}. Valid for 5 minutes.`);
+    sentTo.phone = true;
+  }
+
+  console.log(`🔐 Auth OTP for ${user.name} (${userId}): ${otp} [${type}]`);
+  return { sentTo };
+};
 
 /**
  * POST /auth/register
@@ -86,19 +121,18 @@ export const register = async (req, res, next) => {
         password: hashedPassword,
         barangay,
         address: address || null,
-        isVerified: true, // simplified; add email verification in production
+        isVerified: false, // requires OTP verification
       },
     });
 
-    // Send welcome email (fire-and-forget)
-    if (user.email) sendWelcomeEmail(user.email, user.name);
+    // Send OTP to email and/or phone for verification
+    const { sentTo } = generateAndSendAuthOtp(user.id, user, 'register');
 
-    // Return a token so the client is immediately authenticated after registration
-    const token = generateToken(user.id);
     res.status(201).json({
-      message: 'Registration successful',
-      token,
-      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role, barangay: user.barangay },
+      requiresOtp: true,
+      userId: user.id,
+      sentTo,
+      message: 'Registration successful. Please verify with the OTP sent to your email/phone.',
     });
   } catch (err) {
     next(err);
@@ -418,15 +452,27 @@ export const unifiedLogin = async (req, res, next) => {
     if (user && user.password) {
       const valid = await bcrypt.compare(password, user.password);
       if (valid) {
-        const token = generateToken(user.id, 'user');
+        // ADMIN users bypass OTP — go straight to JWT
+        if (user.role === 'ADMIN') {
+          const token = generateToken(user.id, 'user');
+          return res.json({
+            type: 'user',
+            token,
+            user: {
+              id: user.id, name: user.name, email: user.email, phone: user.phone,
+              role: user.role, barangay: user.barangay, language: user.language,
+              avatarUrl: user.avatarUrl || null,
+            },
+          });
+        }
+
+        // CLIENT users require OTP verification
+        const { sentTo } = generateAndSendAuthOtp(user.id, user, 'login');
         return res.json({
-          type: 'user',
-          token,
-          user: {
-            id: user.id, name: user.name, email: user.email, phone: user.phone,
-            role: user.role, barangay: user.barangay, language: user.language,
-            avatarUrl: user.avatarUrl || null,
-          },
+          requiresOtp: true,
+          userId: user.id,
+          sentTo,
+          message: 'OTP sent to your email/phone. Please verify to continue.',
         });
       }
     }
@@ -545,6 +591,161 @@ export const resetPassword = async (req, res, next) => {
 
     res.json({ message: 'Password reset successfully' });
   } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /auth/verify-auth-otp
+ * Verifies the 6-digit OTP sent during login or registration.
+ *
+ * On success:
+ *  - For registration: marks the user as verified, sends welcome email, returns JWT.
+ *  - For login: returns JWT directly.
+ *
+ * @param {import('express').Request}  req  - Body: { userId, otp }
+ * @param {import('express').Response} res  - 200 with token + user on success.
+ * @param {import('express').NextFunction} next
+ */
+export const verifyAuthOtp = async (req, res, next) => {
+  try {
+    const { userId, otp } = req.body;
+    if (!userId || !otp) return res.status(400).json({ error: 'userId and otp are required' });
+
+    const stored = authOtpStore.get(userId);
+    if (!stored || stored.otp !== otp || Date.now() > stored.expiresAt) {
+      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
+
+    // Consume the OTP
+    authOtpStore.delete(userId);
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // If this was a registration OTP, mark the user as verified
+    if (stored.type === 'register') {
+      await prisma.user.update({ where: { id: userId }, data: { isVerified: true } });
+      if (user.email) sendWelcomeEmail(user.email, user.name);
+    }
+
+    const token = generateToken(user.id, 'user');
+    res.json({
+      type: 'user',
+      token,
+      user: {
+        id: user.id, name: user.name, email: user.email, phone: user.phone,
+        role: user.role, barangay: user.barangay, language: user.language,
+        avatarUrl: user.avatarUrl || null,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /auth/resend-otp
+ * Resends the auth OTP for login or registration.
+ * Generates a new code and sends to email/phone.
+ *
+ * @param {import('express').Request}  req  - Body: { userId }
+ * @param {import('express').Response} res  - 200 with sentTo info.
+ * @param {import('express').NextFunction} next
+ */
+export const resendAuthOtp = async (req, res, next) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Determine the type from any existing stored OTP, default to 'login'
+    const existing = authOtpStore.get(userId);
+    const type = existing?.type || 'login';
+
+    const { sentTo } = generateAndSendAuthOtp(userId, user, type);
+    res.json({ message: 'OTP resent successfully', sentTo });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /auth/firebase/verify-phone
+ * Verifies a Firebase Phone Auth ID token and issues our own JWT.
+ *
+ * Flow:
+ *  1. Frontend uses Firebase SDK to send SMS OTP and verify it.
+ *  2. Firebase returns an ID token to the frontend.
+ *  3. Frontend sends that token here.
+ *  4. We verify it with Firebase Admin SDK, extract the phone number.
+ *  5. Look up or create the user in our DB, return our own JWT.
+ *
+ * @param {import('express').Request}  req  - Body: { idToken }
+ * @param {import('express').Response} res  - 200 with token + user on success.
+ * @param {import('express').NextFunction} next
+ */
+export const verifyFirebasePhone = async (req, res, next) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) return res.status(400).json({ error: 'Firebase ID token is required' });
+
+    const firebaseAuth = getFirebaseAuth();
+    if (!firebaseAuth) {
+      return res.status(503).json({ error: 'Firebase is not configured on this server' });
+    }
+
+    // Verify the Firebase ID token
+    const decoded = await firebaseAuth.verifyIdToken(idToken);
+    const phone = decoded.phone_number;
+
+    if (!phone) {
+      return res.status(400).json({ error: 'No phone number found in Firebase token' });
+    }
+
+    // Normalize PH phone: +639xx → 09xx for DB consistency
+    const normalizedPhone = phone.startsWith('+63')
+      ? '0' + phone.slice(3)
+      : phone;
+
+    // Look up existing user by phone
+    let user = await prisma.user.findFirst({
+      where: { OR: [{ phone: normalizedPhone }, { phone }] },
+    });
+
+    if (!user) {
+      // Auto-create a verified account for the phone number
+      user = await prisma.user.create({
+        data: {
+          phone: normalizedPhone,
+          name: 'Guest User',
+          barangay: 'Unknown',
+          isVerified: true,
+        },
+      });
+    }
+
+    const token = generateToken(user.id);
+    res.json({
+      type: 'user',
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        barangay: user.barangay,
+        language: user.language,
+        avatarUrl: user.avatarUrl || null,
+      },
+    });
+  } catch (err) {
+    if (err.code === 'auth/id-token-expired' || err.code === 'auth/argument-error') {
+      return res.status(401).json({ error: 'Invalid or expired Firebase token' });
+    }
     next(err);
   }
 };

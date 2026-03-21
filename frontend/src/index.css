@@ -6,44 +6,84 @@
   html {
     font-family: 'Inter', system-ui, sans-serif;
     scroll-behavior: smooth;
+    /* Safe-area insets for notched phones (iPhone X+) */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 
   body {
     @apply bg-gray-50 text-gray-900;
+    /* Prevent pull-to-refresh on mobile when not at top */
+    overscroll-behavior-y: contain;
+    /* Remove tap highlight on mobile browsers */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Prevent iOS auto-zoom on input focus (requires font-size >= 16px) */
+  input, select, textarea {
+    font-size: 16px;
   }
 }
 
 @layer components {
   .btn-primary {
     @apply bg-primary-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-primary-700
+           active:bg-primary-800 active:scale-[0.98]
            transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500
            focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    /* Minimum touch target */
+    min-height: 44px;
   }
 
   .btn-secondary {
     @apply bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg font-medium
-           hover:bg-gray-50 transition-all duration-200 focus:outline-none focus:ring-2
+           hover:bg-gray-50 active:bg-gray-100 active:scale-[0.98]
+           transition-all duration-200 focus:outline-none focus:ring-2
            focus:ring-primary-500 focus:ring-offset-2;
+    min-height: 44px;
   }
 
   .btn-danger {
     @apply bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700
+           active:bg-red-800 active:scale-[0.98]
            transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500;
+    min-height: 44px;
   }
 
   .input-field {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none
+    @apply w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none
            focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all
            bg-white text-gray-900 placeholder-gray-400;
+    /* 16px font prevents iOS auto-zoom; taller padding for better touch */
+    font-size: 16px;
+    min-height: 44px;
   }
 
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6;
+    @apply bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6;
   }
 
   .badge {
     @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
   }
+}
+
+/* ─── Mobile touch utilities ─────────────────────────────────────────────── */
+
+/* Ensure all interactive elements have visible active/touch feedback */
+button:active, a:active, [role="button"]:active {
+  opacity: 0.85;
+}
+
+/* Prevent text selection on interactive elements on mobile */
+button, [role="button"] {
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+/* Safe-area bottom padding for fixed bottom elements on notched phones */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Custom scrollbar */

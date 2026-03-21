@@ -33,6 +33,9 @@ import {
   verifyOtp,
   forgotPassword,
   resetPassword,
+  verifyAuthOtp,
+  resendAuthOtp,
+  verifyFirebasePhone,
 } from '../controllers/authController.js';
 import { authenticate } from '../middleware/auth.js';
 import { avatarUpload } from '../middleware/upload.js';
@@ -66,6 +69,15 @@ router.post('/forgot-password', forgotPassword);
 
 /** Verify a reset code and update the resident's password. */
 router.post('/reset-password', resetPassword);
+
+/** Verify the 6-digit auth OTP sent during login or registration. */
+router.post('/verify-auth-otp', verifyAuthOtp);
+
+/** Resend the auth OTP for login or registration. */
+router.post('/resend-otp', resendAuthOtp);
+
+/** Verify Firebase Phone Auth token and issue a local JWT. */
+router.post('/firebase/verify-phone', verifyFirebasePhone);
 
 // ---------------------------------------------------------------------------
 // Protected routes — valid JWT required (authenticate middleware)
