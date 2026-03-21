@@ -141,15 +141,15 @@ app.use('/api/directory', directoryRoutes);
 if (process.env.NODE_ENV === 'production') {
   const frontendDist = path.join(__dirname, '..', '..', 'frontend', 'dist');
 
-  // Serve hashed static assets (JS/CSS/images) with long-term cache
-  // (7 days).  Vite/CRA generate content-hashed filenames so stale-cache
-  // issues do not arise when new builds are deployed.
-  app.use(express.static(frontendDist, { maxAge: '7d' }));
+  // Hashed assets (JS/CSS) — long cache (7 days), safe because filenames change on rebuild
+  app.use('/assets', express.static(path.join(frontendDist, 'assets'), { maxAge: '7d' }));
 
-  // SPA fallback — return index.html for every non-/api route so that React
-  // Router can handle client-side navigation (e.g. direct URL access or
-  // browser refresh on a deep route).
+  // Everything else in dist (favicon, manifest, icons, sw.js) — short cache
+  app.use(express.static(frontendDist, { maxAge: '0', etag: true }));
+
+  // SPA fallback — return index.html with no-cache for every non-/api route
   app.get(/^(?!\/api).*/, (req, res) => {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(path.join(frontendDist, 'index.html'));
   });
 }
