@@ -30,6 +30,30 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 const router = Router();
 
 /**
+ * GET /all
+ * Return every directory entry regardless of active state.
+ * Intended for the admin management panel where inactive entries must
+ * still be visible and editable.
+ * NOTE: Must be defined BEFORE GET /:id so Express doesn't treat "all" as an :id param.
+ *
+ * @name GetAllDirectoryEntries
+ * @access Admin only
+ * @middleware authenticate
+ * @middleware requireAdmin
+ */
+router.get('/all', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const entries = await prisma.directoryEntry.findMany({
+      // Same ordering as the public endpoint for consistency
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+    });
+    res.json(entries);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /
  * Return all active directory entries, ordered by category then by name.
  * Accepts an optional `category` query parameter to filter the results.
@@ -52,29 +76,6 @@ router.get('/', async (req, res, next) => {
     const entries = await prisma.directoryEntry.findMany({
       where,
       // Primary sort: group entries by category; secondary: alphabetical within each group
-      orderBy: [{ category: 'asc' }, { name: 'asc' }],
-    });
-    res.json(entries);
-  } catch (err) {
-    next(err);
-  }
-});
-
-/**
- * GET /all
- * Return every directory entry regardless of active state.
- * Intended for the admin management panel where inactive entries must
- * still be visible and editable.
- *
- * @name GetAllDirectoryEntries
- * @access Admin only
- * @middleware authenticate
- * @middleware requireAdmin
- */
-router.get('/all', authenticate, requireAdmin, async (req, res, next) => {
-  try {
-    const entries = await prisma.directoryEntry.findMany({
-      // Same ordering as the public endpoint for consistency
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
     res.json(entries);

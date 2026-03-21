@@ -31,6 +31,28 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 const router = Router();
 
 /**
+ * GET /all
+ * Return every announcement regardless of published state.
+ * Intended for the admin dashboard to manage drafts and published entries.
+ * NOTE: Must be defined BEFORE GET /:id so Express doesn't treat "all" as an :id param.
+ *
+ * @name GetAllAnnouncements
+ * @access Admin only
+ * @middleware authenticate
+ * @middleware requireAdmin
+ */
+router.get('/all', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const announcements = await prisma.announcement.findMany({
+      orderBy: { createdAt: 'desc' }, // newest first
+    });
+    res.json(announcements);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /
  * Return all published announcements, ordered newest-first.
  * Accepts an optional `category` query parameter to filter results.
@@ -53,27 +75,6 @@ router.get('/', async (req, res, next) => {
     const announcements = await prisma.announcement.findMany({
       where,
       orderBy: { createdAt: 'desc' }, // newest announcements first
-    });
-    res.json(announcements);
-  } catch (err) {
-    next(err);
-  }
-});
-
-/**
- * GET /all
- * Return every announcement regardless of published state.
- * Intended for the admin dashboard to manage drafts and published entries.
- *
- * @name GetAllAnnouncements
- * @access Admin only
- * @middleware authenticate
- * @middleware requireAdmin
- */
-router.get('/all', authenticate, requireAdmin, async (req, res, next) => {
-  try {
-    const announcements = await prisma.announcement.findMany({
-      orderBy: { createdAt: 'desc' }, // newest first
     });
     res.json(announcements);
   } catch (err) {

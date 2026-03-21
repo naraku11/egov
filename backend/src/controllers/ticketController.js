@@ -598,11 +598,11 @@ export const escalateTicket = async (req, res, next) => {
     );
 
     // Broadcast escalation to the ticket room and admin dashboard
-    const io2 = getIO();
-    if (io2) {
+    const io = getIO();
+    if (io) {
       const payload = { id, status: 'ESCALATED', priority: 'URGENT' };
-      io2.to(`ticket:${id}`).emit('ticket:updated', payload);
-      io2.to('admin').emit('ticket:updated', payload);
+      io.to(`ticket:${id}`).emit('ticket:updated', payload);
+      io.to('admin').emit('ticket:updated', payload);
     }
 
     res.json(ticket);
