@@ -26,7 +26,8 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initSocket } from './lib/socket.js';
+import { initSocket, getIO } from './lib/socket.js';
+import prisma from './lib/prisma.js';
 
 // ── Feature routers ───────────────────────────────────────────────────────────
 import authRoutes from './routes/auth.js';
@@ -120,8 +121,30 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // Simple liveness probe used by load balancers / uptime monitors.
 // Returns HTTP 200 with a JSON body including the current server timestamp.
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'E-Gov Aluguinsan API', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    service: 'E-Gov Aluguinsan API',
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()) + 's',
+    environment: process.env.NODE_ENV || 'development',
+    checks: {},
+  };
+
+  // Database check
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    health.checks.database = { status: 'ok' };
+  } catch (err) {
+    health.checks.database = { status: 'error', message: err.message };
+    health.status = 'degraded';
+  }
+
+  // Socket.IO check
+  const io = getIO();
+  health.checks.socketio = { status: io ? 'ok' : 'unavailable' };
+
+  res.status(health.status === 'ok' ? 200 : 503).json(health);
 });
 
 // ── API Routes ────────────────────────────────────────────────────────────────
@@ -140,6 +163,22 @@ app.use('/api/directory', directoryRoutes);
 // Must come AFTER all /api routes so the SPA fallback doesn't swallow API 404s.
 if (process.env.NODE_ENV === 'production') {
   const frontendDist = path.join(__dirname, '..', '..', 'frontend', 'dist');
+
+  // Serve a self-destructing service worker that kills any stale SW from previous builds
+  app.get('/sw.js', (req, res) => {
+    res.set('Content-Type', 'application/javascript');
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.send(`
+      self.addEventListener('install', () => self.skipWaiting());
+      self.addEventListener('activate', () => {
+        self.clients.matchAll({ type: 'window' }).then(clients => {
+          clients.forEach(client => client.navigate(client.url));
+        });
+        self.registration.unregister();
+        caches.keys().then(names => names.forEach(n => caches.delete(n)));
+      });
+    `);
+  });
 
   // Hashed assets (JS/CSS) — long cache (7 days), safe because filenames change on rebuild
   app.use('/assets', express.static(path.join(frontendDist, 'assets'), { maxAge: '7d' }));
