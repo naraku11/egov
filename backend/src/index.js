@@ -164,20 +164,47 @@ app.use('/api/directory', directoryRoutes);
 if (process.env.NODE_ENV === 'production') {
   const frontendDist = path.join(__dirname, '..', '..', 'frontend', 'dist');
 
-  // Serve a self-destructing service worker that kills any stale SW from previous builds
+  // Kill stale service workers — serve a self-destructing SW and no-op workbox
+  // The old PWA build registered sw.js which imported workbox-*.js. Both must
+  // return valid JS that nukes the old caches and unregisters the SW.
+  const swKill = `
+self.addEventListener('install', function() { self.skipWaiting(); });
+self.addEventListener('activate', function() {
+  caches.keys().then(function(names) {
+    names.forEach(function(n) { caches.delete(n); });
+  });
+  self.registration.unregister().then(function() {
+    self.clients.matchAll({ type: 'window' }).then(function(clients) {
+      clients.forEach(function(c) { c.navigate(c.url); });
+    });
+  });
+});`;
+
   app.get('/sw.js', (req, res) => {
     res.set('Content-Type', 'application/javascript');
     res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.send(`
-      self.addEventListener('install', () => self.skipWaiting());
-      self.addEventListener('activate', () => {
-        self.clients.matchAll({ type: 'window' }).then(clients => {
-          clients.forEach(client => client.navigate(client.url));
-        });
-        self.registration.unregister();
-        caches.keys().then(names => names.forEach(n => caches.delete(n)));
-      });
-    `);
+    res.send(swKill);
+  });
+
+  // The old SW imports this workbox file — must return empty valid JS
+  app.get(/^\/workbox-.*\.js$/, (req, res) => {
+    res.set('Content-Type', 'application/javascript');
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.send('// workbox removed');
+  });
+
+  // Old registerSW.js — return empty
+  app.get('/registerSW.js', (req, res) => {
+    res.set('Content-Type', 'application/javascript');
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.send('// removed');
+  });
+
+  // Old manifest — return empty
+  app.get('/manifest.webmanifest', (req, res) => {
+    res.set('Content-Type', 'application/manifest+json');
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.json({});
   });
 
   // Hashed assets (JS/CSS) — long cache (7 days), safe because filenames change on rebuild
