@@ -4,11 +4,17 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [
     react(),
-    // Strip crossorigin attribute from built HTML to avoid CORS issues behind reverse proxy
     {
-      name: 'remove-crossorigin',
+      name: 'html-transforms',
       transformIndexHtml(html) {
-        return html.replace(/ crossorigin/g, '');
+        // Strip crossorigin attribute — avoids CORS issues behind reverse proxy
+        html = html.replace(/ crossorigin/g, '');
+        // Preload the CSS so it's ready before JS executes (prevents FOUC)
+        html = html.replace(
+          /(<link rel="stylesheet" href="(\/assets\/[^"]+\.css)">)/,
+          '<link rel="preload" href="$2" as="style" />$1'
+        );
+        return html;
       },
     },
   ],
