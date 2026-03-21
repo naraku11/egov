@@ -189,7 +189,7 @@ router.get('/tickets', authenticate, requireAdmin, async (req, res, next) => {
 router.get('/users', authenticate, requireAdmin, async (req, res, next) => {
   try {
     const users = await prisma.user.findMany({
-      // Explicit select ensures the password hash is never returned
+      where: { role: 'CLIENT' },
       select: { id: true, name: true, email: true, phone: true, barangay: true, role: true, createdAt: true, isVerified: true, _count: { select: { tickets: true } } },
       orderBy: { createdAt: 'desc' },
     });
