@@ -21,6 +21,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import path from 'path';
+import { sendWelcomeEmail, sendResetCodeEmail } from '../services/notification.js';
 
 /**
  * Creates a signed JWT for the given entity.
@@ -88,6 +89,9 @@ export const register = async (req, res, next) => {
         isVerified: true, // simplified; add email verification in production
       },
     });
+
+    // Send welcome email (fire-and-forget)
+    if (user.email) sendWelcomeEmail(user.email, user.name);
 
     // Return a token so the client is immediately authenticated after registration
     const token = generateToken(user.id);
@@ -490,8 +494,13 @@ export const forgotPassword = async (req, res, next) => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     resetStore.set(emailOrPhone, { code, userId: user.id, expiresAt: Date.now() + 15 * 60 * 1000 });
 
-    // In production: send via email or SMS. For now, log to console.
-    console.log(`[RESET CODE] ${emailOrPhone}: ${code}`);
+    // Send reset code via email if the identifier is an email address
+    if (isEmail && user.email) {
+      sendResetCodeEmail(user.email, user.name, code);
+    } else {
+      // Phone-based reset — log for now (integrate SMS provider for production)
+      console.log(`[RESET CODE] ${emailOrPhone}: ${code}`);
+    }
 
     res.json({ message: 'If an account exists, a reset code has been sent' });
   } catch (err) {

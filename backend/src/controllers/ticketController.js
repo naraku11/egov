@@ -18,7 +18,7 @@
 
 import prisma from '../lib/prisma.js';
 import { classifyConcern } from '../services/classifier.js';
-import { createNotification } from '../services/notification.js';
+import { createNotification, sendTicketAssignedEmail } from '../services/notification.js';
 import { getIO } from '../lib/socket.js';
 import path from 'path';
 
@@ -179,6 +179,11 @@ export const createTicket = async (req, res, next) => {
       `Your concern has been submitted. Ticket #${ticket.ticketNumber}`
     );
 
+    // Email the assigned servant about the new ticket
+    if (servant) {
+      sendTicketAssignedEmail(servant.email, servant.name, ticket);
+    }
+
     // Push real-time updates to admin dashboard and assigned servant
     const io = getIO();
     if (io) {
@@ -187,7 +192,6 @@ export const createTicket = async (req, res, next) => {
         status: ticket.status, priority: ticket.priority,
         department: ticket.department, createdAt: ticket.createdAt,
       });
-      // Notify the specific servant so their queue updates immediately
       if (servant) io.to(`servant:${servant.id}`).emit('ticket:assigned', ticket);
     }
 

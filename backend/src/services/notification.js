@@ -1,97 +1,217 @@
 /**
  * @file notification.js
- * @description Notification-dispatch service for the eGov platform.
- *
- * Provides three notification channels:
- *
- *  1. **In-app / real-time** (`createNotification`) – Persists a notification
- *     record to the database via Prisma and instantly pushes it to the relevant
- *     user's Socket.IO room so connected clients receive it without polling.
- *
- *  2. **Email** (`sendEmailNotification`) – Stub for an email delivery
- *     integration (e.g. Nodemailer + SMTP / SendGrid).  Logs to stdout in the
- *     current implementation; replace the body with a real transport call
- *     before going to production.
- *
- *  3. **SMS** (`sendSmsNotification`) – Stub for an SMS delivery integration
- *     (e.g. Twilio).  Logs to stdout in the current implementation; replace
- *     the body with a real provider call before going to production.
- *
- * All exported functions are fire-and-forget – callers do not need to await a
- * meaningful return value (errors in `createNotification` are caught and logged
- * internally rather than propagated).
+ * @description Notification service — in-app (Socket.IO + DB), email (SMTP), and SMS (stub).
  */
 
+import nodemailer from 'nodemailer';
 import prisma from '../lib/prisma.js';
 import { getIO } from '../lib/socket.js';
 
+// ─── SMTP Transport ──────────────────────────────────────────────────────────
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.hostinger.com',
+  port: parseInt(process.env.SMTP_PORT || '465'),
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
+const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_USER;
+
+// ─── HTML Email Template ─────────────────────────────────────────────────────
+
 /**
- * Creates a persistent in-app notification and pushes it to the user in
- * real-time via Socket.IO.
+ * Wraps content in a branded HTML email layout.
  *
- * The notification is written to the database first to guarantee durability,
- * then emitted on the Socket.IO room `user:<userId>`.  If no Socket.IO server
- * is initialised (e.g. during unit tests) the real-time push is silently
- * skipped.  Any database error is caught and logged so that a notification
- * failure never crashes the calling request.
+ * @param {string} title   - Email heading
+ * @param {string} body    - HTML body content
+ * @param {string} [cta]   - Optional call-to-action URL
+ * @param {string} [ctaLabel] - CTA button text
+ * @returns {string} Full HTML email string
+ */
+const emailTemplate = (title, body, cta, ctaLabel) => `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 16px">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+        <!-- Header -->
+        <tr><td style="background:linear-gradient(135deg,#1e3a5f,#2563eb);padding:24px 32px;text-align:center">
+          <h1 style="margin:0;color:#ffffff;font-size:18px;font-weight:600">Municipality of Aluguinsan</h1>
+          <p style="margin:4px 0 0;color:#93c5fd;font-size:12px">E-Government Assistance System</p>
+        </td></tr>
+        <!-- Body -->
+        <tr><td style="padding:32px">
+          <h2 style="margin:0 0 16px;color:#111827;font-size:20px">${title}</h2>
+          <div style="color:#374151;font-size:14px;line-height:1.6">${body}</div>
+          ${cta ? `
+          <div style="margin:24px 0;text-align:center">
+            <a href="${cta}" style="display:inline-block;background:#2563eb;color:#ffffff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">${ctaLabel || 'View Details'}</a>
+          </div>` : ''}
+        </td></tr>
+        <!-- Footer -->
+        <tr><td style="padding:16px 32px;background:#f9fafb;border-top:1px solid #e5e7eb;text-align:center">
+          <p style="margin:0;color:#9ca3af;font-size:11px">Municipality of Aluguinsan, Province of Cebu, Philippines</p>
+          <p style="margin:4px 0 0;color:#9ca3af;font-size:11px">This is an automated message — please do not reply directly.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+// ─── Email Sender ────────────────────────────────────────────────────────────
+
+/**
+ * Sends an HTML email via the configured SMTP transport.
+ * Errors are caught and logged — never thrown to callers.
  *
- * @param {string} userId   - Database ID of the recipient user.
- * @param {string} ticketId - Database ID of the ticket this notification relates to.
- * @param {string} type     - Notification type identifier (e.g. `'TICKET_UPDATED'`).
- * @param {string} title    - Short notification title displayed in the UI.
- * @param {string} message  - Full notification body text.
- * @returns {Promise<void>}
+ * @param {string} to      - Recipient email address
+ * @param {string} subject - Email subject line
+ * @param {string} html    - Full HTML body
+ */
+export const sendEmailNotification = async (to, subject, html) => {
+  if (!to || !EMAIL_FROM) return;
+  try {
+    await transporter.sendMail({
+      from: `"Aluguinsan E-Gov" <${EMAIL_FROM}>`,
+      to,
+      subject,
+      html,
+    });
+    console.log(`📧 Email sent to ${to}: ${subject}`);
+  } catch (err) {
+    console.error(`📧 Email failed to ${to}:`, err.message);
+  }
+};
+
+// ─── In-App Notification ─────────────────────────────────────────────────────
+
+/**
+ * Creates an in-app notification (DB + Socket.IO push).
+ * Also sends an email if the user has an email address on file.
+ *
+ * @param {string} userId   - Recipient user ID
+ * @param {string} ticketId - Related ticket ID
+ * @param {string} type     - Notification type code
+ * @param {string} title    - Short title
+ * @param {string} message  - Full message body
  */
 export const createNotification = async (userId, ticketId, type, title, message) => {
   try {
-    // Persist the notification so it appears in the user's notification history
-    // even if they are offline at the moment it is created.
     const notif = await prisma.notification.create({
       data: { userId, ticketId, type, title, message },
     });
 
-    // Attempt a real-time push via Socket.IO to the user's dedicated room.
     const io = getIO();
     if (io) io.to(`user:${userId}`).emit('notification:new', notif);
-    // If io is null the user is offline; they will see the notification on
-    // their next login via the persisted database record.
+
+    // Also send email to the user if they have one
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, name: true },
+    });
+
+    if (user?.email) {
+      const clientUrl = process.env.CLIENT_URL || 'https://aluguinsan-egov.online';
+      const ticketUrl = ticketId ? `${clientUrl}/track?ticket=${ticketId}` : clientUrl;
+      const html = emailTemplate(
+        title,
+        `<p>Hi <strong>${user.name}</strong>,</p><p>${message}</p>`,
+        ticketUrl,
+        'View Ticket'
+      );
+      sendEmailNotification(user.email, `[E-Gov] ${title}`, html);
+    }
   } catch (err) {
-    // Log the failure but do not re-throw – a notification error should never
-    // cause the parent operation (e.g. ticket status update) to fail.
     console.error('Failed to create notification:', err);
   }
 };
 
+// ─── Standalone Email Helpers ────────────────────────────────────────────────
+
 /**
- * Sends an email notification to the specified address.
+ * Sends a password reset code email.
  *
- * **Production TODO:** Replace the `console.log` stub with a real email
- * transport such as Nodemailer (SMTP) or a transactional email provider
- * (SendGrid, Mailgun, AWS SES, etc.).
- *
- * @param {string} to      - Recipient email address.
- * @param {string} subject - Email subject line.
- * @param {string} html    - HTML body content of the email.
- * @returns {Promise<void>}
+ * @param {string} to   - Recipient email address
+ * @param {string} name - Recipient name
+ * @param {string} code - 6-digit reset code
  */
-export const sendEmailNotification = async (to, subject, html) => {
-  // In production, integrate nodemailer here
-  console.log(`📧 Email to ${to}: ${subject}`);
+export const sendResetCodeEmail = async (to, name, code) => {
+  const html = emailTemplate(
+    'Password Reset Code',
+    `<p>Hi <strong>${name}</strong>,</p>
+     <p>You requested a password reset for your E-Gov account. Use the code below to reset your password:</p>
+     <div style="margin:24px 0;text-align:center">
+       <span style="display:inline-block;background:#f3f4f6;padding:16px 32px;border-radius:8px;font-size:32px;font-weight:700;letter-spacing:8px;color:#1e3a5f">${code}</span>
+     </div>
+     <p style="color:#6b7280;font-size:13px">This code expires in 15 minutes. If you didn't request this, you can safely ignore this email.</p>`
+  );
+  await sendEmailNotification(to, '[E-Gov] Password Reset Code', html);
 };
 
 /**
- * Sends an SMS notification to the specified phone number.
+ * Sends a welcome email after registration.
  *
- * **Production TODO:** Replace the `console.log` stub with a real SMS provider
- * integration such as Twilio, Vonage (Nexmo), or a local Philippine carrier
- * gateway API.
+ * @param {string} to   - Recipient email
+ * @param {string} name - Recipient name
+ */
+export const sendWelcomeEmail = async (to, name) => {
+  const clientUrl = process.env.CLIENT_URL || 'https://aluguinsan-egov.online';
+  const html = emailTemplate(
+    'Welcome to E-Gov Aluguinsan!',
+    `<p>Hi <strong>${name}</strong>,</p>
+     <p>Thank you for registering with the Municipality of Aluguinsan E-Government Assistance System.</p>
+     <p>You can now:</p>
+     <ul style="color:#374151;font-size:14px;line-height:1.8">
+       <li>Submit concerns and service requests</li>
+       <li>Track your tickets in real-time</li>
+       <li>Receive updates directly from municipal staff</li>
+     </ul>`,
+    clientUrl,
+    'Go to Portal'
+  );
+  await sendEmailNotification(to, '[E-Gov] Welcome to Aluguinsan E-Gov', html);
+};
+
+/**
+ * Sends a notification email to a servant when a ticket is assigned.
  *
- * @param {string} to      - Recipient phone number (E.164 format recommended).
- * @param {string} message - SMS body text (keep under 160 characters to avoid
- *   multi-part message charges).
- * @returns {Promise<void>}
+ * @param {string} to           - Servant email
+ * @param {string} servantName  - Servant's name
+ * @param {object} ticket       - Ticket object with ticketNumber, title, priority
+ */
+export const sendTicketAssignedEmail = async (to, servantName, ticket) => {
+  const html = emailTemplate(
+    'New Ticket Assigned',
+    `<p>Hi <strong>${servantName}</strong>,</p>
+     <p>A new ticket has been assigned to you:</p>
+     <table style="width:100%;border-collapse:collapse;margin:16px 0">
+       <tr><td style="padding:8px 12px;background:#f9fafb;font-weight:600;width:120px;font-size:13px">Ticket #</td>
+           <td style="padding:8px 12px;font-size:13px">${ticket.ticketNumber}</td></tr>
+       <tr><td style="padding:8px 12px;background:#f9fafb;font-weight:600;font-size:13px">Subject</td>
+           <td style="padding:8px 12px;font-size:13px">${ticket.title}</td></tr>
+       <tr><td style="padding:8px 12px;background:#f9fafb;font-weight:600;font-size:13px">Priority</td>
+           <td style="padding:8px 12px;font-size:13px"><span style="color:${ticket.priority === 'URGENT' ? '#dc2626' : '#2563eb'};font-weight:600">${ticket.priority}</span></td></tr>
+     </table>
+     <p>Please review and respond promptly.</p>`
+  );
+  await sendEmailNotification(to, `[E-Gov] Ticket ${ticket.ticketNumber} Assigned`, html);
+};
+
+// ─── SMS (stub) ──────────────────────────────────────────────────────────────
+
+/**
+ * Sends an SMS notification (stub — integrate Twilio/Semaphore for production).
+ *
+ * @param {string} to      - Recipient phone number
+ * @param {string} message - SMS body text
  */
 export const sendSmsNotification = async (to, message) => {
-  // In production, integrate Twilio here
   console.log(`📱 SMS to ${to}: ${message}`);
 };

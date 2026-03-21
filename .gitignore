@@ -14,8 +14,8 @@ ai-classifier/venv/
 backend/.env
 *.env.local
 
-# Prisma
-backend/prisma/migrations/migration_lock.toml
+# Prisma — migration_lock.toml MUST be committed so `prisma migrate deploy` works
+# backend/prisma/migrations/migration_lock.toml
 
 # Uploads (user-submitted files)
 backend/uploads/*
