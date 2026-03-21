@@ -230,9 +230,17 @@ self.addEventListener('activate', function() {
     },
   }));
 
-  // SPA fallback — return index.html with no-cache for every non-/api route
-  app.get(/^(?!\/api).*/, (req, res) => {
+  // Return 404 for missing asset files instead of serving index.html
+  // (prevents MIME type mismatch when old hashed filenames are requested)
+  app.use('/assets', (req, res) => {
+    res.status(404).send('Not found');
+  });
+
+  // SPA fallback — return index.html with no-cache for every non-/api, non-/assets route
+  app.get(/^(?!\/(api|assets)).*/, (req, res) => {
     res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     res.sendFile(path.join(frontendDist, 'index.html'));
   });
 }
