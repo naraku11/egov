@@ -24,7 +24,7 @@
  * drop the user on the correct form automatically.
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Eye, EyeOff, Phone, Mail, Lock, User, MapPin, ArrowLeft, KeyRound, Smartphone } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -112,28 +112,32 @@ export default function AuthPage() {
   const recaptchaRef                          = useRef(null);
 
   /**
-   * Initializes the invisible reCAPTCHA verifier for Firebase Phone Auth.
-   * Must be called before signInWithPhoneNumber.
+   * Clears any existing reCAPTCHA widget and resets the ref.
    */
-  const setupRecaptcha = useCallback(() => {
-    if (recaptchaRef.current) return;
-    try {
-      recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
-        size: 'invisible',
-        callback: () => { /* reCAPTCHA solved */ },
-      });
-    } catch (err) {
-      console.error('reCAPTCHA setup error:', err);
+  const clearRecaptcha = useCallback(() => {
+    if (recaptchaRef.current) {
+      try { recaptchaRef.current.clear(); } catch { /* ignore */ }
+      recaptchaRef.current = null;
     }
+    // Also clear the DOM container in case the widget left behind rendered elements
+    const el = document.getElementById('recaptcha-container');
+    if (el) el.innerHTML = '';
   }, []);
 
-  // Set up reCAPTCHA when the phone-otp or verify-otp tab is active
-  useEffect(() => {
-    if (tab === 'phone-otp' || tab === 'verify-otp') {
-      const timer = setTimeout(setupRecaptcha, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [tab, setupRecaptcha]);
+  /**
+   * Returns a ready reCAPTCHA verifier, creating one if needed.
+   */
+  const getRecaptcha = useCallback(() => {
+    if (recaptchaRef.current) return recaptchaRef.current;
+    // Clear DOM first to avoid "already rendered" error
+    const el = document.getElementById('recaptcha-container');
+    if (el) el.innerHTML = '';
+    recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
+      size: 'invisible',
+      callback: () => { /* reCAPTCHA solved */ },
+    });
+    return recaptchaRef.current;
+  }, []);
 
   /**
    * Step 1: Send SMS OTP via Firebase.
@@ -153,8 +157,8 @@ export default function AuthPage() {
 
     setLoading(true);
     try {
-      setupRecaptcha();
-      const confirmation = await signInWithPhoneNumber(auth, phoneForFirebase, recaptchaRef.current);
+      const verifier = getRecaptcha();
+      const confirmation = await signInWithPhoneNumber(auth, phoneForFirebase, verifier);
       confirmationResultRef.current = confirmation;
       setOtpStep(2);
       toast.success('OTP sent! Check your phone.');
@@ -167,11 +171,7 @@ export default function AuthPage() {
       } else {
         toast.error(err.message || 'Failed to send OTP');
       }
-      // Reset reCAPTCHA on error
-      if (recaptchaRef.current) {
-        try { recaptchaRef.current.clear(); } catch { /* ignore */ }
-        recaptchaRef.current = null;
-      }
+      clearRecaptcha();
     } finally {
       setLoading(false);
     }
@@ -398,24 +398,20 @@ export default function AuthPage() {
     if (!pendingPhone) return;
     setSendingSms(true);
     try {
-      // Set up reCAPTCHA if not already done
-      if (!recaptchaRef.current) {
-        recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
-      }
+      const verifier = getRecaptcha();
       // Convert 09xx to +639xx for Firebase
       const intlPhone = pendingPhone.startsWith('0')
         ? '+63' + pendingPhone.slice(1)
         : pendingPhone.startsWith('+') ? pendingPhone : '+63' + pendingPhone;
 
-      const confirmation = await signInWithPhoneNumber(auth, intlPhone, recaptchaRef.current);
+      const confirmation = await signInWithPhoneNumber(auth, intlPhone, verifier);
       smsConfirmRef.current = confirmation;
       setSmsStep('sms-sent');
       toast.success('SMS code sent to your phone');
     } catch (err) {
       console.error('Firebase SMS error:', err);
       toast.error(err.message || 'Failed to send SMS');
-      // Reset reCAPTCHA on failure
-      recaptchaRef.current = null;
+      clearRecaptcha();
     } finally {
       setSendingSms(false);
     }
