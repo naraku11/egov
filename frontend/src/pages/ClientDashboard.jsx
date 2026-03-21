@@ -1,3 +1,21 @@
+/**
+ * @file ClientDashboard.jsx
+ * @description Resident (client) home screen shown after a successful login.
+ *
+ * On mount, two API calls are made in parallel:
+ *  - GET /tickets?limit=5  — fetches the five most recent tickets for the
+ *    logged-in resident so they appear in the "My Tickets" panel.
+ *  - GET /notifications    — fetches all notifications for the resident;
+ *    unread items get a red badge count.
+ *
+ * Derived summary statistics (total, pending, in-progress, resolved) are
+ * computed from the ticket array in-memory — no separate stats endpoint is used.
+ *
+ * The layout is split into two columns on large screens:
+ *  - Left (2/3): stat cards + recent ticket list.
+ *  - Right (1/3): quick-action links + notifications panel.
+ */
+
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FileText, Clock, CheckCircle, AlertTriangle, Bell, ArrowRight, Star } from 'lucide-react';
@@ -8,16 +26,40 @@ import { useLanguage } from '../contexts/LanguageContext.jsx';
 import Navbar from '../components/Navbar.jsx';
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx';
 
+/**
+ * ClientDashboard component.
+ *
+ * Renders a personalised overview for a logged-in resident, including their
+ * ticket history summary, recent submissions, quick-action shortcuts, and
+ * an in-app notification feed.
+ *
+ * @returns {JSX.Element} The resident dashboard page, or a full-page spinner
+ *   while the initial data load is in progress.
+ */
 export default function ClientDashboard() {
+  // Pull the current resident's profile from auth context (used for greeting)
   const { user } = useAuth();
   const { t } = useLanguage();
+
+  // ── State ───────────────────────────────────────────────────────────────────
+  /** The five most recently submitted tickets belonging to this resident */
   const [tickets, setTickets] = useState([]);
+
+  /** All notifications for this resident (read + unread) */
   const [notifications, setNotifications] = useState([]);
+
+  /** True while the initial parallel API calls are in flight */
   const [loading, setLoading] = useState(true);
 
+  // ── Data Loading ────────────────────────────────────────────────────────────
+  /**
+   * Fetch tickets and notifications simultaneously on first render.
+   * The empty dependency array ensures this only runs once after mount.
+   */
   useEffect(() => {
     const loadData = async () => {
       try {
+        // Both requests are made at the same time to minimise perceived load time
         const [ticketRes, notifRes] = await Promise.all([
           api.get('/tickets?limit=5'),
           api.get('/notifications'),
@@ -33,6 +75,12 @@ export default function ClientDashboard() {
     loadData();
   }, []);
 
+  // ── Derived Statistics ──────────────────────────────────────────────────────
+  /**
+   * Summary counts computed directly from the tickets array.
+   * ASSIGNED and IN_PROGRESS are grouped together under "In Progress" for the
+   * resident-facing display to keep the UI simple.
+   */
   const stats = {
     total: tickets.length,
     pending: tickets.filter(t => t.status === 'PENDING').length,
@@ -40,12 +88,15 @@ export default function ClientDashboard() {
     resolved: tickets.filter(t => t.status === 'RESOLVED').length,
   };
 
+  /** Number of notifications the resident has not yet read — drives the red badge */
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
+  // ── Loading state ───────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
+        {/* Full-page centred spinner shown while API calls are in flight */}
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary-600 border-t-transparent" />
         </div>
@@ -57,7 +108,11 @@ export default function ClientDashboard() {
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
+
+        {/* ── Page Header ────────────────────────────────────────────────────
+            Personalised greeting using the resident's first name, their
+            barangay, and today's date.
+        ──────────────────────────────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
@@ -69,7 +124,10 @@ export default function ClientDashboard() {
           </div>
         </div>
 
-        {/* Stats */}
+        {/* ── Summary Stat Cards ─────────────────────────────────────────────
+            Four clickable cards, each linking to the tickets list filtered by
+            the corresponding status. Values are derived from the tickets array.
+        ──────────────────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[
             { label: 'Total Concerns', value: stats.total, icon: FileText, color: 'text-blue-600 bg-blue-50', link: '/tickets' },
@@ -87,8 +145,13 @@ export default function ClientDashboard() {
           ))}
         </div>
 
+        {/* ── Two-Column Content Area ─────────────────────────────────────────
+            Left (2/3 wide): recent tickets panel.
+            Right (1/3 wide): quick actions + notifications.
+        ──────────────────────────────────────────────────────────────────── */}
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* Recent Tickets */}
+
+          {/* Recent Tickets panel — shows up to 5 latest submissions */}
           <div className="lg:col-span-2 card">
             <div className="flex items-center justify-between mb-5">
               <h2 className="font-semibold text-gray-900">{t('myTickets')}</h2>
@@ -97,6 +160,7 @@ export default function ClientDashboard() {
               </Link>
             </div>
 
+            {/* Empty state */}
             {tickets.length === 0 ? (
               <div className="text-center py-12">
                 <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -105,6 +169,7 @@ export default function ClientDashboard() {
             ) : (
               <div className="space-y-3">
                 {tickets.map(ticket => (
+                  /* Each row is a link to the full ticket detail page */
                   <Link
                     key={ticket.id}
                     to={`/tickets/${ticket.id}`}
@@ -113,6 +178,7 @@ export default function ClientDashboard() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
+                          {/* Department colour dot for quick visual identification */}
                           <span
                             className="w-3 h-3 rounded-full flex-shrink-0"
                             style={{ backgroundColor: ticket.department?.color || '#3B82F6' }}
@@ -126,16 +192,19 @@ export default function ClientDashboard() {
                           {ticket.department?.name} · {format(new Date(ticket.createdAt), 'MMM d, yyyy')}
                         </p>
                       </div>
+                      {/* Status and priority badges stacked on the right */}
                       <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                         <StatusBadge status={ticket.status} />
                         <PriorityBadge priority={ticket.priority} />
                       </div>
                     </div>
+                    {/* Assigned servant name — only rendered when a servant has been assigned */}
                     {ticket.servant && (
                       <p className="text-xs text-gray-400 mt-2">
                         Assigned to: {ticket.servant.name}
                       </p>
                     )}
+                    {/* Star rating row — only rendered when the resident has submitted feedback */}
                     {ticket.feedback?.rating && (
                       <div className="flex items-center gap-1 mt-2">
                         {[1,2,3,4,5].map(s => (
@@ -149,9 +218,12 @@ export default function ClientDashboard() {
             )}
           </div>
 
-          {/* Quick Actions + Notifications */}
+          {/* ── Right Sidebar ────────────────────────────────────────────────
+              Stacked panels: Quick Actions on top, Notifications below.
+          ──────────────────────────────────────────────────────────────────── */}
           <div className="space-y-5">
-            {/* Quick Actions */}
+
+            {/* Quick Actions — shortcut links to the most common resident tasks */}
             <div className="card">
               <h2 className="font-semibold text-gray-900 mb-4">Quick Actions</h2>
               <div className="space-y-2">
@@ -173,12 +245,15 @@ export default function ClientDashboard() {
               </div>
             </div>
 
-            {/* Notifications */}
+            {/* Notifications panel — shows up to 5 most recent notifications;
+                unread items have a blue background; the red badge count is
+                shown next to the "Notifications" heading */}
             <div className="card">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-gray-900 flex items-center gap-2">
                   <Bell className="w-4 h-4" />
                   Notifications
+                  {/* Red badge — only rendered when there are unread notifications */}
                   {unreadCount > 0 && (
                     <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{unreadCount}</span>
                   )}
@@ -188,6 +263,7 @@ export default function ClientDashboard() {
               {notifications.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-4">No notifications yet</p>
               ) : (
+                /* Scrollable list capped at a fixed height; slice(0,5) limits to 5 items */
                 <div className="space-y-2 max-h-56 overflow-y-auto">
                   {notifications.slice(0, 5).map(notif => (
                     <div key={notif.id} className={`p-3 rounded-xl text-sm ${notif.isRead ? 'bg-gray-50' : 'bg-blue-50 border border-blue-100'}`}>

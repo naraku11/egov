@@ -1,3 +1,26 @@
+/**
+ * ReportsPage.jsx
+ *
+ * Admin-only analytics dashboard that surfaces system-wide ticket performance
+ * metrics for a configurable date range (7 / 30 / 90 days).
+ *
+ * Sections:
+ *  1. KPI summary cards — total tickets, resolved, pending, escalated,
+ *     SLA compliance %, and average resolution time.
+ *  2. Ticket Trend — dual-line chart (created vs. resolved) over the selected
+ *     range, using Recharts LineChart.
+ *  3. Status Distribution — donut PieChart showing ticket breakdown by status.
+ *  4. Priority Breakdown — vertical BarChart comparing LOW / NORMAL / URGENT.
+ *  5. Tickets by Department — horizontal BarChart coloured by department.
+ *  6. Servant Performance table — per-servant assigned/resolved counts,
+ *     resolution rate progress bar, and average citizen star rating.
+ *     Live availability status is merged from the /servants endpoint.
+ *
+ * A "Export CSV" button serialises all visible data to a downloadable file.
+ * A "Refresh" button re-fetches both the report and servant data without
+ * re-mounting the page.
+ */
+
 import { useState, useEffect } from 'react';
 import {
   FileText, CheckCircle, AlertTriangle, Star, Users,
@@ -13,6 +36,10 @@ import toast from 'react-hot-toast';
 import api from '../api/client.js';
 import Navbar from '../components/Navbar.jsx';
 
+/**
+ * Hex colour values for each ticket status — used in chart cells and legend
+ * dots throughout the page.
+ */
 const STATUS_COLORS = {
   PENDING:     '#F59E0B',
   ASSIGNED:    '#3B82F6',
@@ -22,18 +49,35 @@ const STATUS_COLORS = {
   ESCALATED:   '#EF4444',
 };
 
+/**
+ * Hex colour values for each ticket priority level — used in the priority
+ * breakdown bar chart and its legend.
+ */
 const PRIORITY_COLORS = {
   LOW:    '#10B981',
   NORMAL: '#3B82F6',
   URGENT: '#EF4444',
 };
 
+/** Date-range options exposed to the user via the range selector. */
 const RANGE_OPTIONS = [
   { label: '7 Days',  value: 7  },
   { label: '30 Days', value: 30 },
   { label: '90 Days', value: 90 },
 ];
 
+/**
+ * StatCard
+ *
+ * Reusable card component for a single KPI metric in the summary row.
+ *
+ * @param {string}      props.label      - Metric name displayed below the value.
+ * @param {string|number} props.value    - Primary metric value (already formatted).
+ * @param {string}      [props.sub]      - Optional sub-label shown between value and label.
+ * @param {React.ElementType} props.icon - Lucide icon component for the coloured badge.
+ * @param {string}      props.colorClass - Tailwind classes for the icon badge background and colour.
+ * @returns {JSX.Element} A KPI card with icon, value, and labels.
+ */
 function StatCard({ label, value, sub, icon: Icon, colorClass }) {
   return (
     <div className="card">
@@ -47,14 +91,37 @@ function StatCard({ label, value, sub, icon: Icon, colorClass }) {
   );
 }
 
+/**
+ * ReportsPage
+ *
+ * System-wide analytics dashboard for administrators.  Renders KPI cards,
+ * interactive Recharts charts, and a servant performance table.
+ * Supports date-range selection and CSV export.
+ *
+ * @returns {JSX.Element} The full-page reports and analytics dashboard.
+ */
 export default function ReportsPage() {
+  // Raw API response from /admin/reports
   const [report, setReport]     = useState(null);
+  // Raw list of servant records from /servants (for live availability status)
   const [servants, setServants] = useState([]);
+
+  // Loading flags
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Currently selected date range in days
   const [range, setRange]       = useState(30);
+  // Timestamp of the most recent successful data fetch
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
+  /**
+   * Fetches both report analytics and servant list concurrently.
+   * Uses `initial` flag to differentiate between the first load (full spinner)
+   * and subsequent refreshes (inline spinning icon only).
+   *
+   * @param {boolean} [initial=false] - True on mount; false for manual refresh or range change.
+   */
   const fetchData = async (initial = false) => {
     if (initial) setLoading(true); else setRefreshing(true);
     try {
@@ -73,11 +140,17 @@ export default function ReportsPage() {
     }
   };
 
-  // initial load on mount
+  // Initial data load on mount
   useEffect(() => { fetchData(true); }, []);
-  // re-fetch when range changes (after initial data is loaded)
+  // Re-fetch (non-initial) whenever the selected range changes
   useEffect(() => { if (report) fetchData(false); }, [range]);
 
+  /**
+   * Serialises all report data and the servant performance table into a CSV
+   * file and triggers a browser download.
+   * Uses `mergedServants` (derived below) so it must be called after the
+   * initial render guard.
+   */
   const handleExportCSV = () => {
     if (!report) return;
     const rows = [
@@ -116,6 +189,7 @@ export default function ReportsPage() {
         s.totalRatings,
       ]),
     ];
+    // Escape double-quotes within cell values and wrap each cell in quotes
     const csv  = rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url  = URL.createObjectURL(blob);
@@ -127,6 +201,7 @@ export default function ReportsPage() {
     toast.success('Report exported as CSV');
   };
 
+  // Full-page loading spinner shown on first load before any data is available
   if (loading || !report) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -138,14 +213,19 @@ export default function ReportsPage() {
     );
   }
 
-  // ── Derived chart data ──────────────────────────────────────────────────────
+  // ── Derived chart data (computed once per render after the guard above) ──────
 
+  /** Status donut chart data — maps each status to its count and hex colour. */
   const statusData = (report.byStatus || []).map(s => ({
     name:  s.status.replace('_', ' '),
     value: s.count,
     color: STATUS_COLORS[s.status] || '#6B7280',
   }));
 
+  /**
+   * Priority bar chart data — sorted URGENT → NORMAL → LOW and formatted
+   * with title-cased labels for the X-axis.
+   */
   const priorityData = (report.byPriority || [])
     .sort((a, b) => ['URGENT','NORMAL','LOW'].indexOf(a.priority) - ['URGENT','NORMAL','LOW'].indexOf(b.priority))
     .map(p => ({
@@ -154,6 +234,10 @@ export default function ReportsPage() {
       fill:  PRIORITY_COLORS[p.priority] || '#6B7280',
     }));
 
+  /**
+   * Department horizontal bar chart data — sorted descending by ticket count
+   * and coloured by each department's configured colour.
+   */
   const deptData = (report.byDepartment || [])
     .sort((a, b) => b.count - a.count)
     .map(d => ({
@@ -162,13 +246,26 @@ export default function ReportsPage() {
       fill:    d.department?.color || '#3B82F6',
     }));
 
+  /**
+   * X-axis tick interval for the trend chart — more ticks for short ranges,
+   * fewer for long ranges to avoid label crowding.
+   */
   const tickInterval = range <= 7 ? 0 : range <= 30 ? 4 : 13;
+
+  /**
+   * Trend line chart data — date strings formatted according to the selected
+   * range (weekday name for 7 days, "MMM d" for longer ranges).
+   */
   const trendData = (report.trend || []).map(t => ({
     ...t,
     label: format(new Date(t.date + 'T00:00:00'), range === 7 ? 'EEE' : 'MMM d'),
   }));
 
-  // Merge servantPerformance with live servant status from /servants
+  /**
+   * Servant performance rows with live status merged from the /servants endpoint.
+   * `servantStatusMap` provides O(1) lookups by servant ID.
+   * `resolutionRate` is computed here as it is not provided by the API.
+   */
   const servantStatusMap = Object.fromEntries(servants.map(s => [s.id, s.status]));
   const mergedServants = (report.servantPerformance || []).map(s => ({
     ...s,
@@ -176,6 +273,10 @@ export default function ReportsPage() {
     resolutionRate: s.assigned ? Math.round((s.resolved / s.assigned) * 100) : 0,
   }));
 
+  /**
+   * Human-friendly average resolution time string.
+   * Converts fractional hours to minutes when under 1 hour.
+   */
   const avgResDisplay = (() => {
     const h = report.avgResolutionHours;
     if (h == null) return 'N/A';
@@ -188,12 +289,13 @@ export default function ReportsPage() {
       <Navbar />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
-        {/* Header */}
+        {/* ── Page header: title, last-updated text, range picker, and action buttons ── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               <BarChart2 className="w-6 h-6 text-primary-600" />
               <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
+              {/* Inline refresh spinner shown while a background fetch is running */}
               {refreshing && (
                 <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
               )}
@@ -206,6 +308,7 @@ export default function ReportsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Date-range selector — segmented control style */}
             <div className="flex bg-gray-100 rounded-lg p-1 gap-0.5">
               {RANGE_OPTIONS.map(opt => (
                 <button
@@ -221,6 +324,7 @@ export default function ReportsPage() {
                 </button>
               ))}
             </div>
+            {/* Manual refresh button */}
             <button
               onClick={() => fetchData(false)}
               disabled={refreshing}
@@ -229,6 +333,7 @@ export default function ReportsPage() {
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
               Refresh
             </button>
+            {/* CSV export */}
             <button onClick={handleExportCSV} className="btn-primary flex items-center gap-2 text-sm">
               <Download className="w-4 h-4" />
               Export CSV
@@ -236,7 +341,7 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* KPI Cards — 6 metrics */}
+        {/* ── KPI summary row — 6 metric cards ── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
           <StatCard
             label="Total Tickets"
@@ -279,13 +384,14 @@ export default function ReportsPage() {
           />
         </div>
 
-        {/* Ticket Trend — full width dual-line chart */}
+        {/* ── Ticket Trend — full-width dual-line chart (created vs resolved) ── */}
         <div className="card mb-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-primary-600" />
               Ticket Trend — Last {range} Days
             </h3>
+            {/* Chart legend */}
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-1.5 text-xs text-gray-500">
                 <span className="w-5 h-0.5 bg-blue-500 inline-block rounded" />
@@ -317,6 +423,7 @@ export default function ReportsPage() {
                       : ''
                   }
                 />
+                {/* Blue line — tickets created per day */}
                 <Line
                   type="monotone"
                   dataKey="created"
@@ -325,6 +432,7 @@ export default function ReportsPage() {
                   dot={range <= 7 ? { r: 4 } : false}
                   name="Created"
                 />
+                {/* Green line — tickets resolved per day */}
                 <Line
                   type="monotone"
                   dataKey="resolved"
@@ -338,10 +446,10 @@ export default function ReportsPage() {
           )}
         </div>
 
-        {/* Status Distribution + Priority Breakdown */}
+        {/* ── Status Distribution donut + Priority Breakdown bar chart (side by side) ── */}
         <div className="grid lg:grid-cols-2 gap-6 mb-6">
 
-          {/* Status donut */}
+          {/* Status donut (PieChart with hole) */}
           <div className="card">
             <h3 className="font-semibold text-gray-900 mb-4 text-sm">Status Distribution</h3>
             {statusData.length === 0 ? (
@@ -364,6 +472,7 @@ export default function ReportsPage() {
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
+                {/* Legend — colour dot, status name, count */}
                 <div className="flex-1 space-y-2.5">
                   {statusData.map(item => (
                     <div key={item.name} className="flex items-center gap-2 text-xs">
@@ -379,7 +488,7 @@ export default function ReportsPage() {
             )}
           </div>
 
-          {/* Priority bar chart */}
+          {/* Priority breakdown vertical bar chart */}
           <div className="card">
             <h3 className="font-semibold text-gray-900 mb-4 text-sm">Priority Breakdown</h3>
             {priorityData.length === 0 ? (
@@ -397,6 +506,7 @@ export default function ReportsPage() {
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
+                {/* Manual legend below the chart */}
                 <div className="flex gap-4 mt-3 justify-center">
                   {[['Urgent','#EF4444'], ['Normal','#3B82F6'], ['Low','#10B981']].map(([k, c]) => (
                     <div key={k} className="flex items-center gap-1.5 text-xs text-gray-500">
@@ -410,7 +520,7 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Tickets by Department — horizontal bars with dept colors */}
+        {/* ── Tickets by Department — horizontal bar chart coloured per department ── */}
         <div className="card mb-6">
           <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Building2 className="w-4 h-4 text-primary-600" />
@@ -419,6 +529,7 @@ export default function ReportsPage() {
           {deptData.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-12">No department data</p>
           ) : (
+            /* Chart height scales with the number of departments to keep bars readable */
             <ResponsiveContainer width="100%" height={Math.max(180, deptData.length * 44)}>
               <BarChart data={deptData} layout="vertical" margin={{ left: 0, right: 24 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
@@ -433,7 +544,7 @@ export default function ReportsPage() {
           )}
         </div>
 
-        {/* Servant Performance Table */}
+        {/* ── Servant Performance table ── */}
         <div className="card">
           <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Users className="w-4 h-4 text-primary-600" />
@@ -467,6 +578,7 @@ export default function ReportsPage() {
                   mergedServants.map(s => (
                     <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                       <td className="py-3 px-3 font-medium text-gray-900 whitespace-nowrap">{s.name}</td>
+                      {/* Department pill coloured by the department's configured colour */}
                       <td className="py-3 px-3">
                         <span
                           className="text-xs px-2 py-0.5 rounded-full text-white font-medium whitespace-nowrap"
@@ -475,6 +587,7 @@ export default function ReportsPage() {
                           {s.department || '—'}
                         </span>
                       </td>
+                      {/* Live availability status badge */}
                       <td className="py-3 px-3">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           s.status === 'AVAILABLE' ? 'bg-green-100  text-green-700'  :
@@ -486,6 +599,7 @@ export default function ReportsPage() {
                       </td>
                       <td className="py-3 px-3 text-center font-medium text-gray-700">{s.assigned}</td>
                       <td className="py-3 px-3 text-center font-semibold text-green-700">{s.resolved}</td>
+                      {/* Resolution rate as a coloured progress bar + percentage text */}
                       <td className="py-3 px-3">
                         <div className="flex items-center gap-2 min-w-[90px]">
                           <div className="flex-1 bg-gray-100 rounded-full h-1.5">
@@ -500,6 +614,7 @@ export default function ReportsPage() {
                           <span className="text-xs text-gray-600 w-7 text-right">{s.resolutionRate}%</span>
                         </div>
                       </td>
+                      {/* Star rating — shown only when the servant has received at least one rating */}
                       <td className="py-3 px-3">
                         {s.avgRating != null ? (
                           <div className="flex items-center gap-1">

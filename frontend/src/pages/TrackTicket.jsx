@@ -1,3 +1,26 @@
+/**
+ * TrackTicket.jsx
+ *
+ * Dual-panel page where a citizen can browse and interact with their submitted
+ * tickets (concerns).
+ *
+ * Left panel  – Scrollable list of the user's tickets with search and status
+ *               filter controls.  On mobile the list takes the full screen;
+ *               selecting a ticket switches to the detail panel.
+ *
+ * Right panel – Chat-style ticket detail view that shows:
+ *               • A status timeline bar (Submitted → Assigned → In Progress → Resolved)
+ *               • The original concern description and any uploaded attachments
+ *               • A real-time message thread shared between the citizen and the
+ *                 assigned servant, updated via Socket.IO
+ *               • A feedback/star-rating prompt once the ticket is resolved
+ *               • A message input bar (hidden for resolved/closed tickets)
+ *
+ * Real-time updates are received over the SocketContext which emits
+ * `message:new` and `ticket:updated` events while the user has a ticket room
+ * open.
+ */
+
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Search, Send, Star, ArrowLeft, Paperclip, Clock, CheckCircle, AlertCircle, XCircle, MessageSquare } from 'lucide-react';
@@ -10,72 +33,123 @@ import { useSocket } from '../contexts/SocketContext.jsx';
 import Navbar from '../components/Navbar.jsx';
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx';
 
+/**
+ * Ordered steps used to render the visual status timeline.
+ * Each item maps a ticket status to a display label and icon component.
+ */
 const statusTimeline = [
   { status: 'PENDING',     label: 'Submitted',   icon: Clock         },
   { status: 'ASSIGNED',    label: 'Assigned',     icon: CheckCircle   },
   { status: 'IN_PROGRESS', label: 'In Progress',  icon: AlertCircle   },
   { status: 'RESOLVED',    label: 'Resolved',     icon: CheckCircle   },
 ];
+
+/**
+ * Numeric order for statuses — used to determine which timeline steps to
+ * highlight as "active" (i.e. already reached).
+ */
 const statusOrder = { PENDING: 0, ASSIGNED: 1, IN_PROGRESS: 2, RESOLVED: 3, CLOSED: 3, ESCALATED: 1 };
 
+/**
+ * TrackTicket
+ *
+ * Dual-panel ticket tracking page with real-time chat, status timeline,
+ * file attachments, and citizen feedback collection.
+ *
+ * @returns {JSX.Element} The full-page ticket tracking view.
+ */
 export default function TrackTicket() {
+  // Route param — may be pre-set when navigating directly to a ticket URL
   const { id } = useParams();
   const { user } = useAuth();
   const { t } = useLanguage();
   const socket = useSocket();
+
+  // Full list of the citizen's tickets
   const [tickets, setTickets]               = useState([]);
+  // Currently open ticket with messages, attachments, and feedback
   const [selectedTicket, setSelectedTicket] = useState(null);
+
+  // Search and filter state for the left-panel ticket list
   const [searchQuery, setSearchQuery]       = useState('');
   const [statusFilter, setStatusFilter]     = useState('');
+
+  // Message input value for the chat bar
   const [message, setMessage]               = useState('');
+
+  // Feedback star rating (1–5) and optional comment
   const [rating, setRating]                 = useState(0);
   const [feedbackComment, setFeedbackComment] = useState('');
+
+  // Loading flags
   const [loading, setLoading]               = useState(true);
   const [sendingMsg, setSendingMsg]         = useState(false);
 
+  // Ref attached to a sentinel div at the bottom of the messages list
   const messagesEndRef = useRef(null);
 
-  // ── auto-scroll whenever messages update ──────────────────────────────────
+  // ── Auto-scroll to newest message whenever the message list grows ──────────
   useEffect(() => {
     if (selectedTicket?.messages?.length) {
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
     }
   }, [selectedTicket?.messages?.length]);
 
-  // ── real-time: join ticket room and listen for events ─────────────────────
+  // ── Real-time Socket.IO: join the ticket room and listen for events ─────────
   useEffect(() => {
     if (!selectedTicket) return;
     const room = `ticket:${selectedTicket.id}`;
     socket.emit('join', { room });
 
+    /**
+     * Appends an incoming servant message to the selected ticket's thread.
+     * CLIENT messages are skipped because they are already reflected
+     * optimistically via the API response in `sendMessage`.
+     *
+     * @param {object} msg - The incoming socket message payload.
+     */
     const onMessage = (msg) => {
       if (msg.senderType === 'CLIENT') return; // already shown via API response
       setSelectedTicket(prev => {
         if (!prev || prev.id !== msg.ticketId) return prev;
+        // Deduplicate in case the event fires multiple times
         const exists = prev.messages.some(m => m.id === msg.id);
         if (exists) return prev;
         return { ...prev, messages: [...prev.messages, msg] };
       });
     };
 
+    /**
+     * Merges a ticket update (e.g. status change, assignment) into both the
+     * selected ticket detail and the left-panel list item.
+     *
+     * @param {object} update - Partial ticket object from the server.
+     */
     const onUpdated = (update) => {
       setSelectedTicket(prev => prev?.id === update.id ? { ...prev, ...update } : prev);
       setTickets(prev => prev.map(t => t.id === update.id ? { ...t, ...update } : t));
     };
 
-    socket.on('message:new', onMessage);
+    socket.on('message:new',    onMessage);
     socket.on('ticket:updated', onUpdated);
 
+    // Clean up listeners and leave the room when a different ticket is selected
     return () => {
       socket.emit('leave', { room });
-      socket.off('message:new', onMessage);
+      socket.off('message:new',    onMessage);
       socket.off('ticket:updated', onUpdated);
     };
   }, [selectedTicket?.id]);
 
+  // Re-fetch the ticket list whenever the status filter changes
   useEffect(() => { loadTickets(); }, [statusFilter]);
+
+  // If the page was opened with a ticket ID in the URL, load it directly
   useEffect(() => { if (id) loadTicket(id); }, [id]);
 
+  /**
+   * Loads up to 50 of the citizen's tickets, optionally filtered by status.
+   */
   const loadTickets = async () => {
     try {
       const params = new URLSearchParams({ limit: '50' });
@@ -89,6 +163,12 @@ export default function TrackTicket() {
     }
   };
 
+  /**
+   * Fetches full detail (messages, attachments, feedback) for a single ticket
+   * and sets it as the currently selected/open ticket.
+   *
+   * @param {string} ticketId - UUID of the ticket to load.
+   */
   const loadTicket = async (ticketId) => {
     try {
       const { data } = await api.get(`/tickets/${ticketId}`);
@@ -98,12 +178,17 @@ export default function TrackTicket() {
     }
   };
 
+  /**
+   * POSTs a new citizen message to the selected ticket's thread, then
+   * refreshes the ticket to include the saved message.
+   */
   const sendMessage = async () => {
     if (!message.trim()) return;
     setSendingMsg(true);
     try {
       await api.post(`/tickets/${selectedTicket.id}/message`, { message });
       setMessage('');
+      // Reload so the sent message appears with its server-assigned metadata
       await loadTicket(selectedTicket.id);
     } catch {
       toast.error('Failed to send message');
@@ -112,6 +197,10 @@ export default function TrackTicket() {
     }
   };
 
+  /**
+   * Submits the star rating and optional comment as feedback for a resolved
+   * ticket.  Refreshes the ticket detail to reflect the saved feedback state.
+   */
   const submitFeedback = async () => {
     if (!rating) return toast.error('Please select a rating');
     try {
@@ -123,13 +212,17 @@ export default function TrackTicket() {
     }
   };
 
+  /**
+   * Client-side filter: keeps tickets whose title or ticketNumber contains
+   * the current search query (case-insensitive).
+   */
   const filteredTickets = tickets.filter(t =>
     !searchQuery ||
     t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     t.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Derive user initials for avatar
+  // First letter of the citizen's name — used as avatar initials in the chat
   const userInitial = user?.name?.charAt(0).toUpperCase() || 'M';
 
   return (
@@ -139,17 +232,20 @@ export default function TrackTicket() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex gap-4 lg:gap-6 min-h-[500px] lg:h-[calc(100vh-7rem)]">
 
-          {/* ── Left: Ticket List ── */}
+          {/* ── Left panel: Ticket list ── */}
+          {/* Hidden on mobile when a ticket is selected (detail takes full screen) */}
           <div className={`${selectedTicket ? 'hidden lg:flex' : 'flex'} flex-col w-full lg:w-80 xl:w-96 flex-shrink-0`}>
             <div className="card flex flex-col h-full">
               <h2 className="font-semibold text-gray-900 mb-4">{t('myTickets')}</h2>
 
+              {/* Search bar */}
               <div className="relative mb-3">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
                 <input type="text" className="input-field pl-9 text-sm" placeholder={t('searchTickets')}
                   value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
               </div>
 
+              {/* Status filter dropdown */}
               <select className="input-field text-sm mb-4" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                 <option value="">All Status</option>
                 <option value="PENDING">Pending</option>
@@ -159,6 +255,7 @@ export default function TrackTicket() {
                 <option value="ESCALATED">Escalated</option>
               </select>
 
+              {/* Scrollable ticket list */}
               <div className="flex-1 overflow-y-auto space-y-2">
                 {loading ? (
                   <div className="flex items-center justify-center h-20">
@@ -184,12 +281,14 @@ export default function TrackTicket() {
                       <StatusBadge status={ticket.status} />
                     </div>
                     <p className="text-sm font-medium text-gray-900 truncate">{ticket.title}</p>
+                    {/* Department colour dot */}
                     <div className="flex items-center gap-2 mt-1">
                       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ticket.department?.color || '#3B82F6' }} />
                       <p className="text-xs text-gray-500">{ticket.department?.name}</p>
                     </div>
                     <div className="flex items-center justify-between mt-1.5">
                       <p className="text-xs text-gray-400">{format(new Date(ticket.createdAt), 'MMM d, yyyy')}</p>
+                      {/* Message count badge */}
                       {ticket._count?.messages > 0 && (
                         <span className="flex items-center gap-1 text-xs text-gray-400">
                           <MessageSquare className="w-3 h-3" />
@@ -203,14 +302,15 @@ export default function TrackTicket() {
             </div>
           </div>
 
-          {/* ── Right: Chat / Ticket Detail ── */}
+          {/* ── Right panel: Ticket detail / chat view ── */}
           {selectedTicket ? (
             <div className="flex-1 flex flex-col overflow-hidden">
               <div className="flex flex-col h-full bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
 
-                {/* ── Header ── */}
+                {/* ── Header: ticket number, status badges, department, assignee ── */}
                 <div className="flex-shrink-0 px-5 py-4 border-b border-gray-100 bg-white">
                   <div className="flex items-start gap-3">
+                    {/* Back button — only visible on mobile */}
                     <button onClick={() => setSelectedTicket(null)} className="lg:hidden mt-0.5 p-1.5 hover:bg-gray-100 rounded-lg flex-shrink-0">
                       <ArrowLeft className="w-4 h-4" />
                     </button>
@@ -222,6 +322,7 @@ export default function TrackTicket() {
                       </div>
                       <h2 className="text-base font-bold text-gray-900 leading-tight">{selectedTicket.title}</h2>
                       <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-gray-500">
+                        {/* Department colour dot */}
                         <span className="flex items-center gap-1">
                           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: selectedTicket.department?.color || '#3B82F6' }} />
                           {selectedTicket.department?.name}
@@ -233,10 +334,11 @@ export default function TrackTicket() {
                   </div>
                 </div>
 
-                {/* ── Timeline ── */}
+                {/* ── Status timeline bar ── */}
                 <div className="flex-shrink-0 px-5 py-2.5 border-b border-gray-50 bg-gray-50/60 overflow-x-auto">
                   <div className="flex items-center gap-1">
                     {statusTimeline.map((item, i) => {
+                      // A step is "active" when the ticket has reached or passed it
                       const current  = statusOrder[selectedTicket.status] || 0;
                       const isActive = current >= statusOrder[item.status];
                       return (
@@ -247,12 +349,14 @@ export default function TrackTicket() {
                             <item.icon className="w-3 h-3" />
                             {item.label}
                           </div>
+                          {/* Connector line between steps */}
                           {i < statusTimeline.length - 1 && (
                             <div className={`h-0.5 w-6 flex-shrink-0 ${isActive ? 'bg-primary-300' : 'bg-gray-200'}`} />
                           )}
                         </div>
                       );
                     })}
+                    {/* Extra escalation badge appended when applicable */}
                     {selectedTicket.status === 'ESCALATED' && (
                       <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 ml-2">
                         <XCircle className="w-3 h-3" /> Escalated
@@ -261,13 +365,14 @@ export default function TrackTicket() {
                   </div>
                 </div>
 
-                {/* ── Messages area ── */}
+                {/* ── Messages area (scrollable) ── */}
                 <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
 
-                  {/* Original concern as opening "card" */}
+                  {/* Original concern shown as a read-only card at the top of the thread */}
                   <div className="bg-gray-50 rounded-2xl p-4 mb-2">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Original Concern</p>
                     <p className="text-sm text-gray-800 leading-relaxed">{selectedTicket.description}</p>
+                    {/* Attachment links */}
                     {selectedTicket.attachments?.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-3">
                         {selectedTicket.attachments.map(att => (
@@ -292,7 +397,7 @@ export default function TrackTicket() {
                     </div>
                   ) : (
                     selectedTicket.messages.map(msg => {
-                      // System messages — centered pill
+                      // System messages are rendered as a centred, pill-shaped label
                       if (msg.senderType === 'SYSTEM') {
                         return (
                           <div key={msg.id} className="flex justify-center my-1">
@@ -300,10 +405,11 @@ export default function TrackTicket() {
                           </div>
                         );
                       }
+                      // `isMe` is true when the message was sent by the citizen (CLIENT)
                       const isMe = msg.senderType === 'CLIENT';
                       return (
                         <div key={msg.id} className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                          {/* Avatar — servant side */}
+                          {/* Avatar — servant side (left) */}
                           {!isMe && (
                             <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold flex-shrink-0 mb-0.5 select-none">
                               {msg.senderName?.charAt(0).toUpperCase()}
@@ -311,9 +417,11 @@ export default function TrackTicket() {
                           )}
 
                           <div className={`max-w-[72%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                            {/* Sender name label — only shown for servant messages */}
                             {!isMe && (
                               <p className="text-xs text-gray-500 mb-1 px-1">{msg.senderName}</p>
                             )}
+                            {/* Bubble: primary colour for citizen, white card for servant */}
                             <div className={`px-4 py-2.5 text-sm leading-relaxed ${
                               isMe
                                 ? 'bg-primary-600 text-white rounded-2xl rounded-br-sm'
@@ -326,7 +434,7 @@ export default function TrackTicket() {
                             </p>
                           </div>
 
-                          {/* Avatar — me side */}
+                          {/* Avatar — citizen side (right) */}
                           {isMe && (
                             <div className="w-7 h-7 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold flex-shrink-0 mb-0.5 select-none">
                               {userInitial}
@@ -337,10 +445,11 @@ export default function TrackTicket() {
                     })
                   )}
 
-                  {/* Feedback prompt */}
+                  {/* Feedback prompt — shown once the ticket is resolved and no feedback exists yet */}
                   {(selectedTicket.status === 'RESOLVED' || selectedTicket.status === 'CLOSED') && !selectedTicket.feedback && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 mt-2">
                       <p className="font-semibold text-yellow-900 mb-3">{t('rateService')}</p>
+                      {/* Star rating buttons */}
                       <div className="flex gap-1 mb-3">
                         {[1,2,3,4,5].map(s => (
                           <button key={s} onClick={() => setRating(s)} className="transition-transform hover:scale-110">
@@ -354,6 +463,7 @@ export default function TrackTicket() {
                     </div>
                   )}
 
+                  {/* Already-submitted feedback — read-only star display */}
                   {selectedTicket.feedback && (
                     <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
                       <p className="text-sm font-semibold text-green-800 flex items-center gap-2">
@@ -367,17 +477,19 @@ export default function TrackTicket() {
                     </div>
                   )}
 
-                  {/* Scroll anchor */}
+                  {/* Scroll anchor — scrollIntoView targets this element */}
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* ── Input bar ── */}
+                {/* ── Message input bar — hidden for resolved/closed tickets ── */}
                 {!['RESOLVED', 'CLOSED'].includes(selectedTicket.status) && (
                   <div className="flex-shrink-0 px-4 py-3 border-t border-gray-100 bg-white">
                     <div className="flex gap-2 items-center">
+                      {/* Citizen avatar */}
                       <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold flex-shrink-0 select-none">
                         {userInitial}
                       </div>
+                      {/* Message text input; Enter sends (Shift+Enter is a newline) */}
                       <input
                         type="text"
                         className="input-field flex-1 text-sm"
@@ -386,6 +498,7 @@ export default function TrackTicket() {
                         onChange={e => setMessage(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
                       />
+                      {/* Send button — disabled while awaiting API response */}
                       <button
                         onClick={sendMessage}
                         disabled={sendingMsg || !message.trim()}
@@ -402,6 +515,7 @@ export default function TrackTicket() {
               </div>
             </div>
           ) : (
+            /* Empty state — shown on desktop when no ticket is selected */
             <div className="hidden lg:flex flex-1 items-center justify-center">
               <div className="text-center text-gray-400">
                 <MessageSquare className="w-16 h-16 mx-auto mb-4 opacity-20" />

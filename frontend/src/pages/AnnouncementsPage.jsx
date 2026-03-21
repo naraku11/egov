@@ -1,3 +1,20 @@
+/**
+ * AnnouncementsPage.jsx
+ *
+ * Public-facing page that displays official announcements from the Municipality
+ * of Aluguinsan.  Citizens can read and search/filter announcements; admins
+ * additionally have inline controls to create, edit, and delete entries.
+ *
+ * Features:
+ *  - Full-text search across title and content fields
+ *  - Category filter bar (All / Info / Alert / Event)
+ *  - Admin-only "New Announcement" button and per-card edit/delete actions
+ *  - Draft announcements are shown with a dashed border and an "EyeOff" badge
+ *    so admins can distinguish unpublished entries from live ones
+ *  - AnnouncementModal: shared create/edit modal rendered inline
+ *  - Delete confirmation dialog with a separate loading state
+ */
+
 import { useState, useEffect } from 'react';
 import { Megaphone, AlertTriangle, Calendar, Info, Search, Plus, Pencil, Trash2, X, Eye, EyeOff } from 'lucide-react';
 import { format } from 'date-fns';
@@ -6,14 +23,36 @@ import api from '../api/client.js';
 import Navbar from '../components/Navbar.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
+/**
+ * Display metadata for each announcement category.
+ * Maps category keys to a human-readable label, icon component, and
+ * Tailwind colour classes used for badges and category indicators.
+ */
 const CATEGORY_META = {
   INFO:  { label: 'Info',    icon: Info,          color: 'bg-blue-100  text-blue-700  border-blue-200'  },
   ALERT: { label: 'Alert',   icon: AlertTriangle, color: 'bg-red-100   text-red-700   border-red-200'   },
   EVENT: { label: 'Event',   icon: Calendar,      color: 'bg-green-100 text-green-700 border-green-200' },
 };
 
+/**
+ * AnnouncementModal
+ *
+ * Controlled modal for creating a new announcement or editing an existing one.
+ * Determines create vs. edit mode by checking whether `entry` is provided.
+ *
+ * @param {object|null} props.entry    - Existing announcement object when editing; null for create.
+ * @param {Function}    props.onClose  - Callback to close the modal without saving.
+ * @param {Function}    props.onSaved  - Callback invoked after a successful save to trigger a list refresh.
+ * @returns {JSX.Element} The modal overlay with form fields.
+ */
 function AnnouncementModal({ entry, onClose, onSaved }) {
+  // Derive mode from whether an existing entry was passed
   const isEdit = !!entry;
+
+  /**
+   * Controlled form state pre-filled with the entry's current values when
+   * editing, or sensible defaults when creating.
+   */
   const [form, setForm] = useState({
     title:       entry?.title       || '',
     content:     entry?.content     || '',
@@ -22,6 +61,12 @@ function AnnouncementModal({ entry, onClose, onSaved }) {
   });
   const [loading, setLoading] = useState(false);
 
+  /**
+   * Submits the form — PUTs to update or POSTs to create.
+   * Calls onSaved + onClose on success so the parent refreshes the list.
+   *
+   * @param {React.FormEvent} e - Native form submit event.
+   */
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -42,11 +87,18 @@ function AnnouncementModal({ entry, onClose, onSaved }) {
     }
   };
 
+  /**
+   * Returns a change handler that updates a single field in the form state.
+   *
+   * @param {string} field - The form state key to update.
+   * @returns {Function} An onChange handler for an input/select element.
+   */
   const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[95vw] sm:max-w-lg animate-fadeIn">
+        {/* Modal header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900 flex items-center gap-2">
             {isEdit
@@ -58,6 +110,8 @@ function AnnouncementModal({ entry, onClose, onSaved }) {
             <X className="w-4 h-4 text-gray-500" />
           </button>
         </div>
+
+        {/* Form fields */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
@@ -75,6 +129,7 @@ function AnnouncementModal({ entry, onClose, onSaved }) {
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
+            {/* Category select */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
               <select className="input-field" value={form.category} onChange={set('category')}>
@@ -83,6 +138,7 @@ function AnnouncementModal({ entry, onClose, onSaved }) {
                 <option value="EVENT">Event</option>
               </select>
             </div>
+            {/* Visibility toggle — Published vs Draft */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Visibility</label>
               <div className="flex gap-2">
@@ -104,6 +160,7 @@ function AnnouncementModal({ entry, onClose, onSaved }) {
               </div>
             </div>
           </div>
+          {/* Action buttons */}
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
             <button type="submit" disabled={loading} className="btn-primary flex-1">
@@ -116,16 +173,45 @@ function AnnouncementModal({ entry, onClose, onSaved }) {
   );
 }
 
+/**
+ * AnnouncementsPage
+ *
+ * Lists published (and, for admins, draft) announcements with search and
+ * category filtering.  Admins can create, edit, and delete entries.
+ *
+ * @returns {JSX.Element} The full-page announcements listing.
+ */
 export default function AnnouncementsPage() {
   const { isAdmin } = useAuth();
+
+  // Full list of announcements fetched from the API
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading]             = useState(true);
+
+  // Filter/search state
   const [search, setSearch]               = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
-  const [modal, setModal]                 = useState(null); // null | 'add' | announcement object
-  const [deleting, setDeleting]           = useState(null); // announcement object | null
+
+  /**
+   * Modal state:
+   *  - null      → no modal open
+   *  - 'add'     → create modal open
+   *  - object    → edit modal open with that announcement pre-filled
+   */
+  const [modal, setModal]                 = useState(null);
+
+  /**
+   * Announcement object targeted for deletion (drives the confirm dialog),
+   * or null when no deletion is pending.
+   */
+  const [deleting, setDeleting]           = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  /**
+   * Fetches announcements from the appropriate endpoint.
+   * Admins use `/announcements/all` to include unpublished drafts;
+   * citizens use `/announcements` which returns only published entries.
+   */
   const load = () => {
     setLoading(true);
     const endpoint = isAdmin ? '/announcements/all' : '/announcements';
@@ -135,8 +221,13 @@ export default function AnnouncementsPage() {
       .finally(() => setLoading(false));
   };
 
+  // Load announcements on mount and whenever the admin state changes
   useEffect(() => { load(); }, [isAdmin]);
 
+  /**
+   * Deletes the announcement currently held in the `deleting` state.
+   * Clears the confirmation dialog and refreshes the list on success.
+   */
   const handleDelete = async () => {
     if (!deleting) return;
     setDeleteLoading(true);
@@ -152,6 +243,10 @@ export default function AnnouncementsPage() {
     }
   };
 
+  /**
+   * Client-side filtered list — applies both the text search (title + content)
+   * and the category filter to the fetched announcements.
+   */
   const filtered = announcements.filter(a => {
     const matchSearch   = !search || a.title.toLowerCase().includes(search.toLowerCase()) || a.content.toLowerCase().includes(search.toLowerCase());
     const matchCategory = categoryFilter === 'ALL' || a.category === categoryFilter;
@@ -163,7 +258,7 @@ export default function AnnouncementsPage() {
       <Navbar />
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-        {/* Header */}
+        {/* ── Page header with optional "New Announcement" button for admins ── */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -183,7 +278,7 @@ export default function AnnouncementsPage() {
           )}
         </div>
 
-        {/* Filters */}
+        {/* ── Search bar and category filter buttons ── */}
         <div className="flex flex-col sm:flex-row gap-3 mb-6">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -195,6 +290,7 @@ export default function AnnouncementsPage() {
               className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
+          {/* Category filter buttons — ALL plus each defined category */}
           <div className="flex gap-2">
             {['ALL', 'INFO', 'ALERT', 'EVENT'].map(cat => (
               <button
@@ -212,7 +308,7 @@ export default function AnnouncementsPage() {
           </div>
         </div>
 
-        {/* Content */}
+        {/* ── Announcements list / loading spinner / empty state ── */}
         {loading ? (
           <div className="flex justify-center py-16">
             <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
@@ -226,24 +322,29 @@ export default function AnnouncementsPage() {
         ) : (
           <div className="space-y-4">
             {filtered.map(ann => {
+              // Resolve category metadata (icon, colours) for this announcement
               const meta = CATEGORY_META[ann.category] || CATEGORY_META.INFO;
               const Icon = meta.icon;
               return (
                 <div
                   key={ann.id}
                   className={`bg-white rounded-2xl border p-5 shadow-sm transition-shadow ${
+                    // Draft entries get a dashed border and reduced opacity
                     !ann.isPublished ? 'border-dashed border-gray-300 opacity-75' : meta.color.split(' ')[2]
                   }`}
                 >
                   <div className="flex items-start gap-4">
+                    {/* Category icon badge */}
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${meta.color}`}>
                       <Icon className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
+                      {/* Category pill, optional draft badge, and creation date */}
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${meta.color}`}>
                           {meta.label}
                         </span>
+                        {/* Draft indicator — visible to admins only */}
                         {isAdmin && !ann.isPublished && (
                           <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200 flex items-center gap-1">
                             <EyeOff className="w-3 h-3" /> Draft
@@ -254,10 +355,11 @@ export default function AnnouncementsPage() {
                         </span>
                       </div>
                       <h2 className="text-base font-bold text-gray-900 mb-2">{ann.title}</h2>
+                      {/* Announcement body — preserves line breaks with whitespace-pre-wrap */}
                       <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{ann.content}</p>
                     </div>
 
-                    {/* Admin actions */}
+                    {/* Admin-only edit and delete action buttons */}
                     {isAdmin && (
                       <div className="flex gap-1.5 flex-shrink-0">
                         <button
@@ -284,7 +386,7 @@ export default function AnnouncementsPage() {
         )}
       </div>
 
-      {/* Add / Edit Modal */}
+      {/* ── Create / Edit modal ── */}
       {modal && (
         <AnnouncementModal
           entry={modal === 'add' ? null : modal}
@@ -293,7 +395,7 @@ export default function AnnouncementsPage() {
         />
       )}
 
-      {/* Delete Confirm */}
+      {/* ── Delete confirmation dialog ── */}
       {deleting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm animate-fadeIn">

@@ -1,3 +1,29 @@
+/**
+ * @file AdminDashboard.jsx
+ * @description System administration panel for the Aluguinsan E-Gov Portal.
+ *
+ * This page is only accessible to users with the ADMIN role. It provides a
+ * tabbed interface covering four areas:
+ *
+ *  1. Overview  — KPI stat cards, a 7-day ticket trend line chart, a status
+ *                 distribution pie chart, a per-department bar chart, and a
+ *                 "Recent Submissions" sidebar.
+ *
+ *  2. Tickets   — A full searchable / filterable table of all tickets in the
+ *                 system (up to 50 records fetched per load).
+ *
+ *  3. Servants  — Grid of public-servant cards with real-time presence
+ *                 indicators, workload bars, and edit / remove actions.
+ *                 The list auto-polls every 30 seconds while this tab is active.
+ *
+ *  4. SLA Breaches — List of tickets that have exceeded their SLA deadline,
+ *                 with a red badge count on the tab button.
+ *
+ * Sub-components defined in this file:
+ *  - ServantModal        — Add / edit a public servant (with avatar upload).
+ *  - DeleteConfirmModal  — Confirmation dialog before removing a servant.
+ */
+
 import { useState, useEffect, useRef } from 'react';
 import {
   Users, FileText, CheckCircle, AlertTriangle, Star, TrendingUp,
@@ -15,9 +41,32 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import Navbar from '../components/Navbar.jsx';
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx';
 
-// Unified add / edit modal
+/**
+ * ServantModal component.
+ *
+ * Renders a modal dialog used for both creating a new public servant and
+ * editing an existing one. The mode is determined by whether a `servant`
+ * prop is passed (edit) or null (add).
+ *
+ * Supports optional avatar upload (max 2 MB; validated client-side).
+ * The form is submitted as `multipart/form-data` so the avatar file can be
+ * sent alongside the text fields in a single request.
+ *
+ * @param {object}   props
+ * @param {object|null} props.servant      - Existing servant to pre-fill the form,
+ *                                           or null when adding a new servant.
+ * @param {Array}    props.departments     - List of department objects for the
+ *                                           department select dropdown.
+ * @param {Function} props.onClose         - Called to close the modal without saving.
+ * @param {Function} props.onSaved         - Called after a successful save so the
+ *                                           parent can refresh the servant list.
+ * @returns {JSX.Element} The modal overlay with the add/edit form.
+ */
 function ServantModal({ servant, departments, onClose, onSaved }) {
+  // Determine whether we are in edit mode (servant exists) or add mode
   const isEdit = !!servant;
+
+  // Form field state — pre-populated from the servant prop when editing
   const [form, setForm] = useState({
     name:         servant?.name         || '',
     email:        servant?.email        || '',
@@ -25,26 +74,46 @@ function ServantModal({ servant, departments, onClose, onSaved }) {
     phone:        servant?.phone        || '',
     departmentId: servant?.departmentId || '',
     status:       servant?.status       || 'AVAILABLE',
-    password:     '',
+    password:     '', // Always starts blank; left empty on edit = keep current
   });
+
+  /** The new File object chosen by the user; null if no new image is selected */
   const [avatarFile, setAvatarFile]       = useState(null);
+  /** Object URL (or existing URL) used to preview the avatar image */
   const [avatarPreview, setAvatarPreview] = useState(servant?.avatarUrl || null);
   const [loading, setLoading]             = useState(false);
+
+  // Hidden file input ref — triggered programmatically when the avatar area is clicked
   const fileRef = useRef();
 
+  /**
+   * Validates the chosen image file and sets the preview URL.
+   * Files larger than 2 MB are rejected with a toast error.
+   *
+   * @param {React.ChangeEvent<HTMLInputElement>} e - File input change event.
+   */
   const handleAvatarChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) { toast.error('Image must be under 2 MB'); return; }
     setAvatarFile(file);
+    // createObjectURL gives an immediate local preview without uploading first
     setAvatarPreview(URL.createObjectURL(file));
   };
 
+  /**
+   * Submits the servant form via multipart/form-data.
+   * Uses PUT for edits and POST for new servants.
+   * Calls onSaved() + onClose() on success.
+   *
+   * @param {React.FormEvent<HTMLFormElement>} e - Form submit event.
+   */
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.departmentId) return toast.error('Please select a department');
     setLoading(true);
     try {
+      // Build FormData so the optional avatar file can be included
       const fd = new FormData();
       fd.append('name',         form.name);
       fd.append('email',        form.email);
@@ -52,8 +121,8 @@ function ServantModal({ servant, departments, onClose, onSaved }) {
       fd.append('phone',        form.phone);
       fd.append('departmentId', form.departmentId);
       fd.append('status',       form.status);
-      if (form.password) fd.append('password', form.password);
-      if (avatarFile)    fd.append('avatar',   avatarFile);
+      if (form.password) fd.append('password', form.password); // only send if changed
+      if (avatarFile)    fd.append('avatar',   avatarFile);    // only send if a new file was picked
 
       if (isEdit) {
         await api.put(`/servants/${servant.id}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
@@ -71,8 +140,20 @@ function ServantModal({ servant, departments, onClose, onSaved }) {
     }
   };
 
+  /**
+   * Convenience helper that returns an onChange handler updating a single
+   * named field in the form state object.
+   *
+   * @param {string} field - The key in the form state to update.
+   * @returns {Function} onChange handler.
+   */
   const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
 
+  /**
+   * Derives a two-character initials string from the servant's name, used as
+   * the avatar placeholder when no image has been chosen.
+   * Falls back to '?' when the name field is empty.
+   */
   const initials = form.name.trim()
     ? (() => { const p = form.name.trim().split(' '); return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : form.name.slice(0, 2).toUpperCase(); })()
     : '?';
@@ -80,6 +161,7 @@ function ServantModal({ servant, departments, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-fadeIn">
+        {/* Modal header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900 flex items-center gap-2">
             {isEdit
@@ -94,7 +176,7 @@ function ServantModal({ servant, departments, onClose, onSaved }) {
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
 
-          {/* Avatar picker */}
+          {/* Avatar picker — clicking the avatar circle opens the hidden file input */}
           <div className="flex flex-col items-center gap-2">
             <div
               className="relative cursor-pointer group"
@@ -108,23 +190,28 @@ function ServantModal({ servant, departments, onClose, onSaved }) {
                   className="w-16 h-16 rounded-full object-cover border-2 border-gray-200 group-hover:opacity-70 transition-opacity"
                 />
               ) : (
+                /* Initials placeholder shown when no image is available */
                 <div className="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold bg-green-600 group-hover:opacity-70 transition-opacity">
                   {initials}
                 </div>
               )}
+              {/* Hover overlay with camera icon */}
               <div className="absolute inset-0 flex items-center justify-center rounded-full">
                 <div className="w-7 h-7 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <Camera className="w-3.5 h-3.5 text-white" />
                 </div>
               </div>
+              {/* Small camera badge always visible at bottom-right of the circle */}
               <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-primary-600 rounded-full flex items-center justify-center border-2 border-white">
                 <Camera className="w-2.5 h-2.5 text-white" />
               </div>
             </div>
             <p className="text-xs text-gray-400">Click to set photo · JPG, PNG, GIF, WebP · Max 2 MB</p>
+            {/* Hidden file input; accept restricts the OS file picker to images */}
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
           </div>
 
+          {/* Form fields */}
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
@@ -151,6 +238,7 @@ function ServantModal({ servant, departments, onClose, onSaved }) {
                 ))}
               </select>
             </div>
+            {/* Availability status toggle — only shown when editing an existing servant */}
             {isEdit && (
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Availability Status</label>
@@ -180,6 +268,7 @@ function ServantModal({ servant, departments, onClose, onSaved }) {
 
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
+                {/* Password is required only for new servants; blank = keep current on edit */}
                 Password {isEdit ? <span className="font-normal text-gray-400">(leave blank to keep current)</span> : '*'}
               </label>
               <input
@@ -206,6 +295,22 @@ function ServantModal({ servant, departments, onClose, onSaved }) {
   );
 }
 
+/**
+ * DeleteConfirmModal component.
+ *
+ * A simple confirmation dialog shown before permanently removing a public
+ * servant. Includes a warning that any open tickets assigned to the servant
+ * will revert to PENDING status.
+ *
+ * @param {object}   props
+ * @param {object}   props.servant    - The servant object about to be deleted
+ *                                      (used to display their name).
+ * @param {Function} props.onClose    - Called to cancel and close the modal.
+ * @param {Function} props.onConfirm  - Called when the admin confirms deletion.
+ * @param {boolean}  props.loading    - Disables the confirm button while the
+ *                                      delete API call is in flight.
+ * @returns {JSX.Element} The confirmation modal overlay.
+ */
 function DeleteConfirmModal({ servant, onClose, onConfirm, loading }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -218,6 +323,7 @@ function DeleteConfirmModal({ servant, onClose, onConfirm, loading }) {
           <p className="text-sm text-gray-500 mb-1">
             You are about to remove <span className="font-semibold text-gray-800">{servant.name}</span>.
           </p>
+          {/* Warning about ticket re-assignment side-effect */}
           <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
             Any open tickets assigned to this servant will be returned to <strong>Pending</strong>.
           </p>
@@ -237,36 +343,90 @@ function DeleteConfirmModal({ servant, onClose, onConfirm, loading }) {
   );
 }
 
+/** Chart colour palette cycled across pie slices, bar cells, etc. */
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
+
+/** Status options available in the Tickets tab filter dropdown */
 const STATUS_OPTIONS = ['ALL', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'ESCALATED'];
+
+/** Navigation tabs for the dashboard; order determines left-to-right display */
 const TABS = ['overview', 'tickets', 'servants', 'sla'];
 
+/**
+ * AdminDashboard component.
+ *
+ * Manages all admin data fetching, polling, and state. Data is loaded lazily
+ * per tab — switching to a tab that hasn't been visited yet triggers
+ * `fetchTabData()` for that tab. The Overview stats, departments list, and
+ * recent tickets are always loaded on initial mount regardless of the active tab.
+ *
+ * @returns {JSX.Element} The full admin dashboard, or a spinner during the
+ *   initial data load.
+ */
 export default function AdminDashboard() {
+  // Logged-in admin user (used for the greeting)
   const { user } = useAuth();
+
+  // ── Tab state ───────────────────────────────────────────────────────────────
+  /** Currently active tab: 'overview' | 'tickets' | 'servants' | 'sla' */
   const [tab, setTab] = useState('overview');
+
+  // ── Data state ──────────────────────────────────────────────────────────────
+  /** Aggregated system stats returned by GET /admin/stats */
   const [stats, setStats] = useState(null);
+  /** Full ticket list used in the Tickets tab (up to 50 items) */
   const [tickets, setTickets] = useState([]);
+  /** All public servants — loaded when the Servants tab is first opened */
   const [servants, setServants] = useState([]);
+  /** Tickets whose SLA deadline has passed — loaded when the SLA tab is opened */
   const [slaBreaches, setSlaBreaches] = useState([]);
+  /** The 5 most recently submitted tickets shown in the Overview sidebar */
   const [recentTickets, setRecentTickets] = useState([]);
+
+  /** True while the very first page load is in progress (shows full-page spinner) */
   const [loading, setLoading] = useState(true);
+
+  /** Full list of departments used in the add/edit servant modal dropdown */
   const [departments, setDepartments] = useState([]);
-  const [servantModal, setServantModal] = useState(null); // null | 'add' | servant object
-  const [deletingServant, setDeletingServant] = useState(null); // servant object | null
+
+  // ── Modal state ─────────────────────────────────────────────────────────────
+  /** null = modal closed, 'add' = new servant form, servant object = edit form */
+  const [servantModal, setServantModal] = useState(null);
+  /** The servant object currently staged for deletion, or null */
+  const [deletingServant, setDeletingServant] = useState(null);
+  /** True while the delete API call is in flight (disables the confirm button) */
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // ── Refresh state ───────────────────────────────────────────────────────────
+  /** True while a manual refresh is in flight (shows spinner on the Refresh button) */
   const [refreshing, setRefreshing] = useState(false);
+  /** Timestamp of the last successful data load — shown as "Updated X ago" */
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
-  // Tickets tab filters
+
+  // ── Tickets tab filters ─────────────────────────────────────────────────────
+  /** Free-text search query applied to ticket number, title, and resident name */
   const [ticketSearch, setTicketSearch] = useState('');
+  /** Status filter value; 'ALL' means no status filter is applied */
   const [ticketStatusFilter, setTicketStatusFilter] = useState('ALL');
 
+  /** Interval ref for the 30-second servant list auto-poll */
   const servantPollRef = useRef(null);
 
+  // ── Effects ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Initial load effect — runs once on mount to fetch the overview data.
+   */
   useEffect(() => {
     loadAll(true);
   }, []);
 
-  // Poll servant data every 30 s when the Servants tab is active
+  /**
+   * Servants tab polling effect.
+   * Starts a 30-second interval that re-fetches the servant list whenever the
+   * Servants tab is active (so presence / workload data stays fresh), and
+   * clears the interval when the user navigates away from that tab.
+   */
   useEffect(() => {
     if (tab === 'servants') {
       servantPollRef.current = setInterval(() => fetchTabData('servants'), 30000);
@@ -276,7 +436,14 @@ export default function AdminDashboard() {
     return () => clearInterval(servantPollRef.current);
   }, [tab]);
 
-  // Fetch data for a tab without changing the active tab
+  // ── Data fetching helpers ───────────────────────────────────────────────────
+
+  /**
+   * Fetches the data specific to a given tab without changing the active tab or
+   * resetting any other state. Used by both `loadTabData` and the servant poll.
+   *
+   * @param {'tickets'|'servants'|'sla'} targetTab - The tab whose data to load.
+   */
   const fetchTabData = async (targetTab) => {
     try {
       if (targetTab === 'tickets') {
@@ -294,16 +461,28 @@ export default function AdminDashboard() {
     }
   };
 
-  // Switch to a tab and load its data
+  /**
+   * Switches the active tab and immediately fetches that tab's data.
+   *
+   * @param {string} newTab - The tab identifier to switch to.
+   */
   const loadTabData = (newTab) => {
     setTab(newTab);
     fetchTabData(newTab);
   };
 
-  // Refresh overview stats + whatever tab is currently active
+  /**
+   * Performs a full refresh of overview data (stats, departments, recent
+   * tickets) plus whatever tab is currently active.
+   * On the initial call (`isInitial=true`) it shows the full-page spinner;
+   * subsequent manual refreshes use the smaller inline spinner on the button.
+   *
+   * @param {boolean} [isInitial=false] - Whether this is the first-ever load.
+   */
   const loadAll = async (isInitial = false) => {
     if (isInitial) setLoading(true); else setRefreshing(true);
     try {
+      // Fetch overview data in parallel
       const [statsRes, deptsRes, recentRes] = await Promise.all([
         api.get('/admin/stats'),
         api.get('/departments'),
@@ -313,7 +492,7 @@ export default function AdminDashboard() {
       setDepartments(deptsRes.data);
       setRecentTickets(recentRes.data.tickets || []);
       setLastRefreshed(new Date());
-      // Also refresh the active tab's data if not on overview
+      // Also refresh the currently visible tab so it does not show stale data
       if (tab !== 'overview') await fetchTabData(tab);
     } catch {
       toast.error('Failed to refresh');
@@ -323,6 +502,10 @@ export default function AdminDashboard() {
     }
   };
 
+  /**
+   * Sends the DELETE request for the servant staged in `deletingServant`.
+   * On success refreshes the servant list and closes the confirmation modal.
+   */
   const handleDeleteServant = async () => {
     if (!deletingServant) return;
     setDeleteLoading(true);
@@ -338,10 +521,12 @@ export default function AdminDashboard() {
     }
   };
 
+  // ── Loading / empty guard ───────────────────────────────────────────────────
   if (loading || !stats) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
+        {/* Full-page spinner shown only during the initial data load */}
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary-600 border-t-transparent" />
         </div>
@@ -349,11 +534,18 @@ export default function AdminDashboard() {
     );
   }
 
-  // Chart data
+  // ── Derived chart data (computed after stats has loaded) ────────────────────
+
+  /** Ticket count per status — fed into the PieChart */
   const statusData = stats.byStatus?.map(s => ({ name: s.status.replace('_', ' '), value: s.count })) || [];
+
+  /** Ticket count per department — fed into the BarChart */
   const deptData = stats.byDepartment?.map(d => ({ name: d.department?.name?.split(' ').slice(0, 2).join(' ') || 'Unknown', tickets: d.count })) || [];
+
+  /** Daily ticket volume for the last 7 days — fed into the LineChart */
   const trend = stats.ticketsLast7Days || [];
 
+  /** Config array for the six overview KPI stat cards */
   const statCards = [
     { label: 'Total Tickets', value: stats.totalTickets, icon: FileText, color: 'text-blue-600 bg-blue-50' },
     { label: 'Pending', value: stats.pendingTickets, icon: Clock, color: 'text-yellow-600 bg-yellow-50' },
@@ -363,7 +555,10 @@ export default function AdminDashboard() {
     { label: 'Avg. Rating', value: stats.avgRating ? `${stats.avgRating.toFixed(1)}/5` : 'N/A', icon: Star, color: 'text-amber-600 bg-amber-50' },
   ];
 
-  // Filtered tickets for tickets tab
+  /**
+   * Tickets filtered by the search query and status dropdown in the Tickets tab.
+   * Filtering is done client-side against the already-loaded tickets array.
+   */
   const filteredTickets = tickets.filter(ticket => {
     const matchesSearch = !ticketSearch ||
       ticket.title?.toLowerCase().includes(ticketSearch.toLowerCase()) ||
@@ -378,11 +573,15 @@ export default function AdminDashboard() {
       <Navbar />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
-        {/* Header */}
+        {/* ── Page Header ──────────────────────────────────────────────────────
+            Shows the admin's first name, today's date, and a relative
+            "Updated X ago" timestamp. The Refresh button triggers loadAll().
+        ────────────────────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               <h1 className="text-2xl font-bold text-gray-900">Admin Panel</h1>
+              {/* Live system-online indicator — purely cosmetic */}
               <span className="flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                 System Online
@@ -405,7 +604,10 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        {/* Tabs */}
+        {/* ── Tab Navigation ───────────────────────────────────────────────────
+            Pill-style tab bar. The SLA tab gets a red count badge when there
+            are active breaches.
+        ────────────────────────────────────────────────────────────────────── */}
         <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6 w-full sm:w-auto sm:inline-flex">
           {TABS.map(t => (
             <button
@@ -416,6 +618,7 @@ export default function AdminDashboard() {
               }`}
             >
               {t === 'sla' ? 'SLA Breaches' : t.charAt(0).toUpperCase() + t.slice(1)}
+              {/* Red badge on SLA tab when breaches exist */}
               {t === 'sla' && stats.slaBreaches > 0 && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
                   {stats.slaBreaches > 9 ? '9+' : stats.slaBreaches}
@@ -425,10 +628,13 @@ export default function AdminDashboard() {
           ))}
         </div>
 
-        {/* ── OVERVIEW TAB ── */}
+        {/* ── OVERVIEW TAB ─────────────────────────────────────────────────────
+            KPI cards, three charts (trend line, status pie, dept bar), and a
+            recent-submissions sidebar.
+        ────────────────────────────────────────────────────────────────────── */}
         {tab === 'overview' && (
           <div className="space-y-6 animate-fadeIn">
-            {/* Stat Cards */}
+            {/* Six KPI stat cards */}
             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               {statCards.map(({ label, value, icon: Icon, color }) => (
                 <div key={label} className="card">
@@ -441,11 +647,10 @@ export default function AdminDashboard() {
               ))}
             </div>
 
-            {/* Charts + Recent Tickets */}
+            {/* Charts column (left 2/3) + recent tickets sidebar (right 1/3) */}
             <div className="grid lg:grid-cols-3 gap-6">
-              {/* Charts column */}
               <div className="lg:col-span-2 space-y-6">
-                {/* Ticket Trend */}
+                {/* 7-day ticket trend line chart */}
                 <div className="card">
                   <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
                     <Activity className="w-4 h-4 text-primary-600" />
@@ -454,6 +659,7 @@ export default function AdminDashboard() {
                   <ResponsiveContainer width="100%" height={180}>
                     <LineChart data={trend}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      {/* tickFormatter converts the ISO date string to a short label */}
                       <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => format(new Date(d), 'MMM d')} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip />
@@ -462,20 +668,22 @@ export default function AdminDashboard() {
                   </ResponsiveContainer>
                 </div>
 
-                {/* Status + Department charts side by side */}
+                {/* Status pie chart and department bar chart side by side */}
                 <div className="grid sm:grid-cols-2 gap-6">
-                  {/* Status Pie */}
+                  {/* Donut-style status distribution pie */}
                   <div className="card">
                     <h3 className="font-semibold text-gray-900 mb-4 text-sm">Status Distribution</h3>
                     <div className="flex items-center gap-3">
                       <ResponsiveContainer width="55%" height={150}>
                         <PieChart>
                           <Pie data={statusData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value">
+                            {/* Each slice gets a colour from the COLORS palette */}
                             {statusData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                           </Pie>
                           <Tooltip />
                         </PieChart>
                       </ResponsiveContainer>
+                      {/* Colour-coded legend to the right of the chart */}
                       <div className="flex-1 space-y-1.5">
                         {statusData.map((item, i) => (
                           <div key={item.name} className="flex items-center gap-1.5 text-xs">
@@ -488,7 +696,7 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  {/* Dept Bar */}
+                  {/* Tickets per department bar chart */}
                   <div className="card">
                     <h3 className="font-semibold text-gray-900 mb-4 text-sm flex items-center gap-2">
                       <Building2 className="w-3.5 h-3.5 text-primary-600" />
@@ -509,7 +717,8 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Recent Tickets column */}
+              {/* Recent Submissions sidebar — 5 most recent tickets with a link
+                  to the full tickets tab */}
               <div className="card">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
@@ -536,6 +745,7 @@ export default function AdminDashboard() {
                         <p className="text-sm font-medium text-gray-900 truncate">{ticket.title}</p>
                         <div className="flex items-center justify-between mt-1">
                           <span className="text-xs text-gray-500 flex items-center gap-1">
+                            {/* Department colour dot */}
                             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ticket.department?.color }} />
                             {ticket.department?.name}
                           </span>
@@ -552,12 +762,15 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ── TICKETS TAB ── */}
+        {/* ── TICKETS TAB ──────────────────────────────────────────────────────
+            Searchable, filterable table of all system tickets. The search
+            input and status dropdown filter `filteredTickets` client-side.
+        ────────────────────────────────────────────────────────────────────── */}
         {tab === 'tickets' && (
           <div className="card animate-fadeIn">
             <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
               <h3 className="font-semibold text-gray-900 flex-1">All Tickets</h3>
-              {/* Search */}
+              {/* Free-text search: matches ticket number, title, or resident name */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -568,7 +781,7 @@ export default function AdminDashboard() {
                   className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-64"
                 />
               </div>
-              {/* Status filter */}
+              {/* Status dropdown filter */}
               <div className="relative">
                 <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <select
@@ -581,9 +794,11 @@ export default function AdminDashboard() {
                   ))}
                 </select>
               </div>
+              {/* Result count indicator */}
               <span className="text-xs text-gray-400 whitespace-nowrap">{filteredTickets.length} result{filteredTickets.length !== 1 ? 's' : ''}</span>
             </div>
 
+            {/* Tickets data table */}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -602,10 +817,12 @@ export default function AdminDashboard() {
                       <td className="py-3 px-3 text-gray-500 text-xs">{ticket.user?.barangay}</td>
                       <td className="py-3 px-3">
                         <span className="flex items-center gap-1.5 text-xs">
+                          {/* Department colour dot for quick visual scanning */}
                           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ticket.department?.color }} />
                           {ticket.department?.name}
                         </span>
                       </td>
+                      {/* Em dash shown when no servant has been assigned yet */}
                       <td className="py-3 px-3 text-gray-500 text-xs">{ticket.servant?.name || '—'}</td>
                       <td className="py-3 px-3"><StatusBadge status={ticket.status} /></td>
                       <td className="py-3 px-3"><PriorityBadge priority={ticket.priority} /></td>
@@ -621,7 +838,14 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ── SERVANTS TAB ── */}
+        {/* ── SERVANTS TAB ─────────────────────────────────────────────────────
+            Card grid of all registered public servants. Each card shows:
+            - Avatar / initials, name, position, department colour dot
+            - Real-time presence derived from lastActiveAt timestamp
+            - Workload bar (active ticket count vs. notional max of 10)
+            - Edit and Remove action buttons
+            The list auto-refreshes every 30 s via the polling effect above.
+        ────────────────────────────────────────────────────────────────────── */}
         {tab === 'servants' && (
           <div className="card animate-fadeIn">
             <div className="flex items-center justify-between mb-5">
@@ -629,12 +853,14 @@ export default function AdminDashboard() {
                 <h3 className="font-semibold text-gray-900">Public Servants</h3>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {servants.length} registered &nbsp;·&nbsp;
+                  {/* Count servants active within the last 2 minutes as "online" */}
                   <span className="text-green-600 font-medium">
                     {servants.filter(s => s.lastActiveAt && (Date.now() - new Date(s.lastActiveAt).getTime()) < 120000).length} online now
                   </span>
                   &nbsp;· auto-refreshes every 30s
                 </p>
               </div>
+              {/* Opens the add-servant modal */}
               <button onClick={() => setServantModal('add')} className="btn-primary text-sm flex items-center gap-2">
                 <UserPlus className="w-4 h-4" />
                 Add Servant
@@ -642,10 +868,21 @@ export default function AdminDashboard() {
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {servants.map(servant => {
+                /**
+                 * workloadPct maps the servant's active ticket count (workload)
+                 * to a 0–100% bar width, capped at 100.
+                 * Colour thresholds: green < 50%, yellow 50–79%, red >= 80%.
+                 */
                 const workloadPct = Math.min(100, (servant.workload || 0) * 10);
                 const workloadColor = workloadPct >= 80 ? 'bg-red-500' : workloadPct >= 50 ? 'bg-yellow-500' : 'bg-green-500';
 
-                // Compute real-time presence from lastActiveAt
+                /**
+                 * Derive real-time presence label and dot colour from the
+                 * difference between now and the servant's last heartbeat.
+                 *   < 2 min  → "Online now" (green, pulsing)
+                 *   < 10 min → "Active X min ago" (yellow)
+                 *   otherwise → "Last seen X ago" (gray) or "Never logged in"
+                 */
                 const diffMin = servant.lastActiveAt
                   ? (Date.now() - new Date(servant.lastActiveAt).getTime()) / 60000
                   : Infinity;
@@ -660,7 +897,7 @@ export default function AdminDashboard() {
                 return (
                   <div key={servant.id} className="border border-gray-100 rounded-xl p-4 hover:shadow-sm transition-shadow">
                     <div className="flex items-center gap-3 mb-3">
-                      {/* Avatar with presence dot */}
+                      {/* Avatar with presence dot overlay */}
                       <div className="relative flex-shrink-0">
                         {servant.avatarUrl ? (
                           <img
@@ -669,6 +906,7 @@ export default function AdminDashboard() {
                             className="w-10 h-10 rounded-full object-cover"
                           />
                         ) : (
+                          /* Fallback initials circle coloured by the department */
                           <div
                             className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm"
                             style={{ backgroundColor: servant.department?.color || '#3B82F6' }}
@@ -676,12 +914,14 @@ export default function AdminDashboard() {
                             {servant.name.charAt(0)}
                           </div>
                         )}
+                        {/* Presence indicator dot — absolute positioned at bottom-right */}
                         <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${presence.dot}`} title={presence.label} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-900 text-sm truncate">{servant.name}</p>
                         <p className="text-xs text-gray-500 truncate">{servant.position}</p>
                       </div>
+                      {/* Availability status pill (AVAILABLE / BUSY / OFFLINE) */}
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${
                         servant.status === 'AVAILABLE' ? 'bg-green-100 text-green-700' :
                         servant.status === 'BUSY' ? 'bg-yellow-100 text-yellow-700' :
@@ -691,13 +931,13 @@ export default function AdminDashboard() {
                       </span>
                     </div>
 
-                    {/* Department */}
+                    {/* Department with colour dot */}
                     <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-2">
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: servant.department?.color }} />
                       {servant.department?.name}
                     </div>
 
-                    {/* Presence line */}
+                    {/* Human-readable presence line */}
                     <div className="flex items-center gap-1.5 text-xs mb-3">
                       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${presence.dot}`} />
                       <span className={diffMin < 2 ? 'text-green-600 font-medium' : diffMin < 10 ? 'text-yellow-600' : 'text-gray-400'}>
@@ -705,7 +945,7 @@ export default function AdminDashboard() {
                       </span>
                     </div>
 
-                    {/* Workload bar */}
+                    {/* Workload progress bar */}
                     <div className="mb-2">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-xs text-gray-500">Workload</span>
@@ -721,7 +961,7 @@ export default function AdminDashboard() {
 
                     <p className="text-xs text-gray-400 truncate mb-3">{servant.email}</p>
 
-                    {/* Action buttons */}
+                    {/* Edit and Remove action buttons */}
                     <div className="flex gap-2 pt-2 border-t border-gray-100">
                       <button
                         onClick={() => setServantModal(servant)}
@@ -748,7 +988,11 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ── SLA BREACHES TAB ── */}
+        {/* ── SLA BREACHES TAB ─────────────────────────────────────────────────
+            List of tickets that have passed their SLA deadline without being
+            resolved. Each entry shows the deadline timestamp and a relative
+            "overdue by X" label.
+        ────────────────────────────────────────────────────────────────────── */}
         {tab === 'sla' && (
           <div className="card animate-fadeIn">
             <div className="flex items-center gap-2 mb-5">
@@ -759,6 +1003,7 @@ export default function AdminDashboard() {
               </span>
             </div>
             {slaBreaches.length === 0 ? (
+              /* All-clear state — shown when no tickets have breached their SLA */
               <div className="text-center py-12 text-gray-400">
                 <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-300" />
                 <p className="font-medium text-green-600">No SLA breaches — all tickets are within SLA.</p>
@@ -781,6 +1026,7 @@ export default function AdminDashboard() {
                         <span>👥 {ticket.user?.name}</span>
                       </div>
                     </div>
+                    {/* SLA deadline and relative time shown on the right */}
                     <div className="text-right flex-shrink-0">
                       <p className="text-xs text-red-700 font-semibold">SLA Deadline</p>
                       <p className="text-xs text-red-600">{format(new Date(ticket.slaDeadline), 'MMM d, h:mm a')}</p>
@@ -797,6 +1043,12 @@ export default function AdminDashboard() {
 
       </div>
 
+      {/* ── Modals ─────────────────────────────────────────────────────────────
+          Both modals are rendered at the root of the component tree so they
+          overlay the full page via fixed positioning.
+      ──────────────────────────────────────────────────────────────────────── */}
+
+      {/* Add / edit servant modal — shown when servantModal is not null */}
       {servantModal && (
         <ServantModal
           servant={servantModal === 'add' ? null : servantModal}
@@ -806,6 +1058,7 @@ export default function AdminDashboard() {
         />
       )}
 
+      {/* Delete confirmation modal — shown when a servant has been staged for removal */}
       {deletingServant && (
         <DeleteConfirmModal
           servant={deletingServant}

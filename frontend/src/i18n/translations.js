@@ -1,3 +1,41 @@
+/**
+ * @file translations.js
+ * @description Static internationalisation (i18n) data for the Aluguinsan
+ * E-Gov Portal.
+ *
+ * Three top-level exports are provided:
+ *
+ *  1. `translations`        — Nested object keyed by language code ('en',
+ *     'fil', 'ceb') where each locale contains a flat map of translation
+ *     keys to their localised strings.  Consumed by LanguageContext to power
+ *     the `t(key)` helper used throughout the UI.
+ *
+ *  2. `barangays`           — Array of barangay names belonging to Aluguinsan
+ *     used to populate address-selection dropdowns.
+ *
+ *  3. `concernCategories`   — Array of ticket category descriptors, each with
+ *     a stable `value` slug and a `label` object containing translations for
+ *     all three supported languages.
+ *
+ * Adding a new language: add a matching key block to `translations` that
+ * mirrors every key present in the 'en' locale.
+ *
+ * Adding a new translation key: add it to all three locale blocks and update
+ * the `concernCategories` label objects as needed.
+ */
+
+/**
+ * Complete translation map for all supported UI languages.
+ *
+ * Locale codes:
+ *  - 'en'  — English
+ *  - 'fil' — Filipino (Tagalog)
+ *  - 'ceb' — Cebuano (Bisaya)
+ *
+ * Keys are grouped by feature area using inline comments for navigability.
+ *
+ * @type {{ en: Object.<string, string>, fil: Object.<string, string>, ceb: Object.<string, string> }}
+ */
 export const translations = {
   en: {
     // Navigation
@@ -136,6 +174,7 @@ export const translations = {
     required: 'This field is required',
   },
 
+  // ── Filipino (Tagalog) translations ───────────────────────────────────────
   fil: {
     home: 'Tahanan',
     login: 'Mag-login',
@@ -256,6 +295,7 @@ export const translations = {
     required: 'Kailangan ang field na ito',
   },
 
+  // ── Cebuano (Bisaya) translations ─────────────────────────────────────────
   ceb: {
     home: 'Balay',
     login: 'Mag-login',
@@ -377,6 +417,13 @@ export const translations = {
   },
 };
 
+/**
+ * Canonical list of barangays in Aluguinsan, Cebu used in address-selection
+ * dropdowns across the portal.  Kept here alongside translations so that
+ * localisation data remains in a single file.
+ *
+ * @type {string[]}
+ */
 export const barangays = [
   'Angilan', 'Bojo', 'Bonbon', 'Esperanza', 'Kandingan',
   'Kantabogon', 'Kawasan', 'Olango', 'Poblacion', 'Punay',
@@ -384,6 +431,14 @@ export const barangays = [
   'Tuburan Sur',
 ];
 
+/**
+ * Ticket concern categories used for AI-assisted routing and manual department
+ * selection.  Each entry carries:
+ *  - `value`  — stable snake_case slug stored in the database.
+ *  - `label`  — object with 'en', 'fil', and 'ceb' localised display strings.
+ *
+ * @type {Array<{ value: string, label: { en: string, fil: string, ceb: string } }>}
+ */
 export const concernCategories = [
   { value: 'infrastructure', label: { en: 'Infrastructure & Roads', fil: 'Imprastraktura at Daan', ceb: 'Imprastraktura ug Dalan' } },
   { value: 'social_welfare', label: { en: 'Social Welfare', fil: 'Kapakanan Panlipunan', ceb: 'Kaayuhan sa Katawhan' } },

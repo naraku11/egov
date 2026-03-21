@@ -1,3 +1,29 @@
+/**
+ * @file AuthPage.jsx
+ * @description Unified authentication page for the Aluguinsan E-Gov Portal.
+ *
+ * Handles three distinct flows within a single route (/auth):
+ *
+ *  1. Login   — Residents, public servants, and the admin all use the same
+ *               `/auth/unified-login` endpoint. The API response includes a
+ *               `type` field ('servant' | 'user') that determines which context
+ *               setter is called and which route the user is redirected to.
+ *
+ *  2. Register — New resident registration. Collects name, optional email /
+ *               phone, barangay, address, and password. On success the returned
+ *               JWT is immediately stored via `loginUser()` so the user lands
+ *               on their dashboard without a separate login step.
+ *
+ *  3. Forgot password — Two-step flow:
+ *               Step 1: Submit email or phone → backend sends a 6-digit OTP.
+ *               Step 2: Enter OTP + new password → password is reset and the
+ *                       user is redirected back to the login tab.
+ *
+ * The active tab ('login' | 'register' | 'forgot') can be pre-selected via the
+ * `?tab=register` query-string parameter so deep-links from LandingPage CTAs
+ * drop the user on the correct form automatically.
+ */
+
 import { useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Eye, EyeOff, Phone, Mail, Lock, User, MapPin, ArrowLeft, KeyRound } from 'lucide-react';
@@ -7,26 +33,63 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import { useLanguage } from '../contexts/LanguageContext.jsx';
 import { barangays } from '../i18n/translations.js';
 
+/**
+ * AuthPage component.
+ *
+ * Reads the `?tab` query parameter on mount to set the initial active form.
+ * All three forms share a single loading flag so buttons are disabled during
+ * any in-flight API request, preventing duplicate submissions.
+ *
+ * @returns {JSX.Element} The authentication page with login, register, and
+ *   forgot-password tabs.
+ */
 export default function AuthPage() {
+  // Read the optional ?tab query param to pre-select login or register
   const [searchParams] = useSearchParams();
+
+  // Active tab: 'login' | 'register' | 'forgot'
   const [tab, setTab] = useState(searchParams.get('tab') || 'login');
+
+  // Toggle plain-text visibility for the login password field
   const [showPassword, setShowPassword] = useState(false);
+
+  // Shared loading flag — covers all three form submission handlers
   const [loading, setLoading] = useState(false);
+
+  // Auth context setters; loginServant stores a different key than loginUser
   const { loginUser, loginServant } = useAuth();
+
   const { t } = useLanguage();
   const navigate = useNavigate();
 
+  // ── Login form state ────────────────────────────────────────────────────────
   const [loginData, setLoginData] = useState({ emailOrPhone: '', password: '' });
+
+  // ── Registration form state ─────────────────────────────────────────────────
   const [regData, setRegData] = useState({ name: '', email: '', phone: '', password: '', confirmPassword: '', barangay: '', address: '' });
 
-  // Forgot-password state
-  const [resetStep, setResetStep]             = useState(1); // 1 = enter email/phone, 2 = enter code + new pw
+  // ── Forgot-password multi-step state ────────────────────────────────────────
+  /** Current step of the password-reset flow: 1 = request OTP, 2 = verify OTP + set new password */
+  const [resetStep, setResetStep]             = useState(1);
+  /** Email or phone entered by the user in step 1, also shown as confirmation in step 2 */
   const [resetContact, setResetContact]       = useState('');
+  /** 6-digit numeric OTP received via email/SMS */
   const [resetCode, setResetCode]             = useState('');
+  /** New password chosen during step 2 */
   const [resetNewPw, setResetNewPw]           = useState('');
+  /** Confirmation copy of the new password (must match resetNewPw before submit) */
   const [resetConfirm, setResetConfirm]       = useState('');
+  /** Toggle plain-text visibility for the new-password field in step 2 */
   const [showResetPw, setShowResetPw]         = useState(false);
 
+  /**
+   * Handles the Login form submission.
+   * Calls the unified login endpoint which accepts both resident and servant
+   * credentials. Redirects to /servant, /admin, or /dashboard based on the
+   * type/role returned by the API.
+   *
+   * @param {React.FormEvent<HTMLFormElement>} e - Form submit event.
+   */
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -36,12 +99,15 @@ export default function AuthPage() {
         password: loginData.password,
       });
       if (data.type === 'servant') {
+        // Store servant JWT and profile, then go to the servant dashboard
         loginServant(data.token, data.servant);
         toast.success(`Welcome, ${data.servant.name}!`);
         navigate('/servant');
       } else {
+        // Store resident/admin JWT and profile
         loginUser(data.token, data.user);
         toast.success(`Welcome back, ${data.user.name}!`);
+        // Admins go to /admin; regular residents go to /dashboard
         navigate(data.user.role === 'ADMIN' ? '/admin' : '/dashboard');
       }
     } catch (err) {
@@ -51,6 +117,12 @@ export default function AuthPage() {
     }
   };
 
+  /**
+   * Handles step 1 of the forgot-password flow — requests an OTP.
+   * On success advances resetStep to 2 so the OTP entry form is shown.
+   *
+   * @param {React.FormEvent<HTMLFormElement>} e - Form submit event.
+   */
   const handleForgotSend = async (e) => {
     e.preventDefault();
     if (!resetContact) return toast.error('Enter your email or phone number');
@@ -66,6 +138,13 @@ export default function AuthPage() {
     }
   };
 
+  /**
+   * Handles step 2 of the forgot-password flow — verifies OTP and sets the
+   * new password. On success resets all reset-state fields and returns the
+   * user to the login tab.
+   *
+   * @param {React.FormEvent<HTMLFormElement>} e - Form submit event.
+   */
   const handleForgotReset = async (e) => {
     e.preventDefault();
     if (resetNewPw.length < 6) return toast.error('Password must be at least 6 characters');
@@ -74,6 +153,7 @@ export default function AuthPage() {
     try {
       await api.post('/auth/reset-password', { emailOrPhone: resetContact, code: resetCode, newPassword: resetNewPw });
       toast.success('Password reset! Please log in.');
+      // Return to login tab and clear all reset-flow state
       setTab('login');
       setResetStep(1);
       setResetContact(''); setResetCode(''); setResetNewPw(''); setResetConfirm('');
@@ -84,8 +164,18 @@ export default function AuthPage() {
     }
   };
 
+  /**
+   * Handles the Register form submission.
+   * Optional fields (email, phone, address) are omitted from the payload when
+   * left blank so the backend does not receive empty strings.
+   * On success the API returns a JWT and user object; loginUser() is called so
+   * the user is immediately authenticated and redirected to their dashboard.
+   *
+   * @param {React.FormEvent<HTMLFormElement>} e - Form submit event.
+   */
   const handleRegister = async (e) => {
     e.preventDefault();
+    // Client-side validation before hitting the API
     if (regData.password !== regData.confirmPassword) {
       return toast.error('Passwords do not match');
     }
@@ -94,12 +184,13 @@ export default function AuthPage() {
     try {
       const { data } = await api.post('/auth/register', {
         name: regData.name,
-        email: regData.email || undefined,
-        phone: regData.phone || undefined,
+        email: regData.email || undefined,       // omit if empty
+        phone: regData.phone || undefined,       // omit if empty
         password: regData.password,
         barangay: regData.barangay,
-        address: regData.address || undefined,
+        address: regData.address || undefined,   // omit if empty
       });
+      // Immediately log the new user in without a separate login step
       loginUser(data.token, data.user);
       toast.success('Registration successful! Welcome!');
       navigate('/dashboard');
@@ -112,7 +203,7 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-blue-50 flex flex-col">
-      {/* Header */}
+      {/* Back-to-home link shown at the top of the page */}
       <div className="p-4">
         <Link to="/" className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-primary-600 transition-colors">
           <ArrowLeft className="w-4 h-4" />
@@ -122,7 +213,7 @@ export default function AuthPage() {
 
       <div className="flex-1 flex items-center justify-center p-4">
         <div className="w-full max-w-md">
-          {/* Logo */}
+          {/* Portal logo / branding block */}
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center text-white font-bold text-2xl mx-auto mb-3 shadow-lg">
               AG
@@ -132,7 +223,8 @@ export default function AuthPage() {
           </div>
 
           <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-            {/* Tabs */}
+            {/* Tab switcher — only Login and Register are shown; 'forgot' is
+                accessed via a link inside the Login form */}
             <div className="flex border-b border-gray-100">
               {[
                 { id: 'login', label: t('login') },
@@ -153,7 +245,10 @@ export default function AuthPage() {
             </div>
 
             <div className="p-6">
-              {/* Login */}
+              {/* ── Login Form ────────────────────────────────────────────────
+                  Accepts email or PH mobile number plus password.
+                  A "Forgot password?" link switches the tab to 'forgot'.
+              ──────────────────────────────────────────────────────────────── */}
               {tab === 'login' && (
                 <form onSubmit={handleLogin} className="space-y-4">
                   <h2 className="text-lg font-semibold text-gray-900">{t('welcomeBack')}</h2>
@@ -184,6 +279,7 @@ export default function AuthPage() {
                         onChange={e => setLoginData({ ...loginData, password: e.target.value })}
                         required
                       />
+                      {/* Eye toggle for the password field */}
                       <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
@@ -194,6 +290,7 @@ export default function AuthPage() {
                     {loading ? t('loading') : t('login')}
                   </button>
 
+                  {/* Forgot password link — switches to the forgot tab and resets to step 1 */}
                   <div className="text-center">
                     <button
                       type="button"
@@ -212,10 +309,14 @@ export default function AuthPage() {
                 </form>
               )}
 
-              {/* Forgot Password */}
+              {/* ── Forgot Password Flow ──────────────────────────────────────
+                  Step 1: Enter email/phone → OTP is sent.
+                  Step 2: Enter OTP + new password → password is updated.
+              ──────────────────────────────────────────────────────────────── */}
               {tab === 'forgot' && (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
+                    {/* Back arrow returns to login and resets step counter */}
                     <button
                       type="button"
                       onClick={() => { setTab('login'); setResetStep(1); }}
@@ -228,6 +329,7 @@ export default function AuthPage() {
                     </h2>
                   </div>
 
+                  {/* Step 1: request OTP */}
                   {resetStep === 1 ? (
                     <form onSubmit={handleForgotSend} className="space-y-4">
                       <p className="text-sm text-gray-500">
@@ -252,6 +354,7 @@ export default function AuthPage() {
                       </button>
                     </form>
                   ) : (
+                    /* Step 2: verify OTP and set new password */
                     <form onSubmit={handleForgotReset} className="space-y-4">
                       <p className="text-sm text-gray-500">
                         Enter the 6-digit code sent to <span className="font-medium text-gray-700">{resetContact}</span>.
@@ -260,6 +363,8 @@ export default function AuthPage() {
                         <label className="block text-sm font-medium text-gray-700 mb-1">Reset Code</label>
                         <div className="relative">
                           <KeyRound className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                          {/* inputMode="numeric" shows the numeric keyboard on mobile;
+                              non-digit characters are stripped via replace */}
                           <input
                             type="text"
                             inputMode="numeric"
@@ -285,6 +390,7 @@ export default function AuthPage() {
                             required
                             minLength={6}
                           />
+                          {/* Eye toggle for the new-password field */}
                           <button type="button" onClick={() => setShowResetPw(s => !s)} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
                             {showResetPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
@@ -304,6 +410,7 @@ export default function AuthPage() {
                       <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
                         {loading ? 'Resetting...' : 'Reset Password'}
                       </button>
+                      {/* "Resend code" returns to step 1 so the user can request a fresh OTP */}
                       <div className="text-center">
                         <button
                           type="button"
@@ -318,10 +425,16 @@ export default function AuthPage() {
                 </div>
               )}
 
-              {/* Register */}
+              {/* ── Registration Form ─────────────────────────────────────────
+                  Collects the minimum required resident profile. Email and
+                  phone are both optional but at least one should be provided
+                  for future communication. Barangay is required for correct
+                  routing of concerns within the municipality.
+              ──────────────────────────────────────────────────────────────── */}
               {tab === 'register' && (
                 <form onSubmit={handleRegister} className="space-y-4">
                   <h2 className="text-lg font-semibold text-gray-900">{t('createAccount')}</h2>
+                  {/* Full name */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">{t('fullName')} *</label>
                     <div className="relative">
@@ -330,6 +443,7 @@ export default function AuthPage() {
                         onChange={e => setRegData({ ...regData, name: e.target.value })} required />
                     </div>
                   </div>
+                  {/* Email and phone side-by-side (both optional) */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">{t('email')}</label>
@@ -345,6 +459,7 @@ export default function AuthPage() {
                       </div>
                     </div>
                   </div>
+                  {/* Barangay — required; options sourced from the translations file */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">{t('barangay')} *</label>
                     <div className="relative">
@@ -356,11 +471,13 @@ export default function AuthPage() {
                       </select>
                     </div>
                   </div>
+                  {/* Optional street/purok address */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">{t('address')}</label>
                     <input type="text" className="input-field" placeholder="Street, Purok..." value={regData.address}
                       onChange={e => setRegData({ ...regData, address: e.target.value })} />
                   </div>
+                  {/* Password and confirmation side-by-side */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">{t('password')} *</label>
