@@ -21,7 +21,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import path from 'path';
-import { sendWelcomeEmail, sendResetCodeEmail, sendOtpEmail, sendSmsNotification } from '../services/notification.js';
+import { sendWelcomeEmail, sendResetCodeEmail, sendOtpEmail } from '../services/notification.js';
 import { getFirebaseAuth } from '../lib/firebase.js';
 
 /**
@@ -59,9 +59,9 @@ const generateAndSendAuthOtp = async (userId, user, type) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   authOtpStore.set(userId, { otp, expiresAt: Date.now() + 5 * 60 * 1000, type });
 
-  const sentTo = { email: false, phone: false };
+  const sentTo = { email: false, phone: !!user.phone };
 
-  // Send to email via SMTP
+  // Send OTP to email via SMTP
   if (user.email) {
     try {
       await sendOtpEmail(user.email, user.name, otp);
@@ -71,18 +71,11 @@ const generateAndSendAuthOtp = async (userId, user, type) => {
     }
   }
 
-  // Send to phone via Semaphore SMS
-  if (user.phone) {
-    try {
-      const sent = await sendSmsNotification(user.phone, `[E-Gov Aluguinsan] Your verification code is: ${otp}. Valid for 5 minutes.`);
-      sentTo.phone = sent;
-    } catch (err) {
-      console.error(`📱 OTP SMS failed for ${user.phone}:`, err.message);
-    }
-  }
+  // Phone SMS is handled by Firebase Phone Auth on the frontend
+  // We just tell the frontend a phone number is available
 
   console.log(`🔐 Auth OTP for ${user.name} (${userId}): ${otp} [${type}]`);
-  return { sentTo };
+  return { sentTo, phone: user.phone || null };
 };
 
 /**
@@ -134,12 +127,13 @@ export const register = async (req, res, next) => {
     });
 
     // Send OTP to email and/or phone for verification
-    const { sentTo } = await generateAndSendAuthOtp(user.id, user, 'register');
+    const otpResult = await generateAndSendAuthOtp(user.id, user, 'register');
 
     res.status(201).json({
       requiresOtp: true,
       userId: user.id,
-      sentTo,
+      sentTo: otpResult.sentTo,
+      phone: otpResult.phone,
       message: 'Registration successful. Please verify with the OTP sent to your email/phone.',
     });
   } catch (err) {
@@ -475,11 +469,12 @@ export const unifiedLogin = async (req, res, next) => {
         }
 
         // CLIENT users require OTP verification
-        const { sentTo } = await generateAndSendAuthOtp(user.id, user, 'login');
+        const { sentTo, phone } = await generateAndSendAuthOtp(user.id, user, 'login');
         return res.json({
           requiresOtp: true,
           userId: user.id,
           sentTo,
+          phone,
           message: 'OTP sent to your email/phone. Please verify to continue.',
         });
       }
@@ -673,8 +668,8 @@ export const resendAuthOtp = async (req, res, next) => {
     const existing = authOtpStore.get(userId);
     const type = existing?.type || 'login';
 
-    const { sentTo } = await generateAndSendAuthOtp(userId, user, type);
-    res.json({ message: 'OTP resent successfully', sentTo });
+    const { sentTo, phone } = await generateAndSendAuthOtp(userId, user, type);
+    res.json({ message: 'OTP resent successfully', sentTo, phone });
   } catch (err) {
     next(err);
   }
@@ -747,6 +742,79 @@ export const verifyFirebasePhone = async (req, res, next) => {
         role: user.role,
         barangay: user.barangay,
         language: user.language,
+        avatarUrl: user.avatarUrl || null,
+      },
+    });
+  } catch (err) {
+    if (err.code === 'auth/id-token-expired' || err.code === 'auth/argument-error') {
+      return res.status(401).json({ error: 'Invalid or expired Firebase token' });
+    }
+    next(err);
+  }
+};
+
+/**
+ * POST /auth/verify-phone-otp
+ * Verifies a Firebase Phone Auth token to complete login/register OTP flow.
+ *
+ * Used when a citizen chooses "Verify via SMS" instead of entering the email OTP.
+ * Validates the Firebase token, checks that the phone matches the pending user,
+ * consumes the auth OTP entry, and returns a JWT.
+ *
+ * @param {import('express').Request}  req  - Body: { userId, idToken }
+ * @param {import('express').Response} res  - 200 with token + user on success.
+ * @param {import('express').NextFunction} next
+ */
+export const verifyPhoneOtp = async (req, res, next) => {
+  try {
+    const { userId, idToken } = req.body;
+    if (!userId || !idToken) {
+      return res.status(400).json({ error: 'userId and Firebase idToken are required' });
+    }
+
+    // Check there is a pending OTP entry for this user
+    const stored = authOtpStore.get(userId);
+    if (!stored) {
+      return res.status(400).json({ error: 'No pending verification found. Please log in again.' });
+    }
+
+    // Verify Firebase token
+    const firebaseAuth = getFirebaseAuth();
+    if (!firebaseAuth) {
+      return res.status(503).json({ error: 'Firebase is not configured on this server' });
+    }
+
+    const decoded = await firebaseAuth.verifyIdToken(idToken);
+    const firebasePhone = decoded.phone_number;
+    if (!firebasePhone) {
+      return res.status(400).json({ error: 'No phone number in Firebase token' });
+    }
+
+    // Normalize and match against user's phone
+    const normalizedPhone = firebasePhone.startsWith('+63') ? '0' + firebasePhone.slice(3) : firebasePhone;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (user.phone !== normalizedPhone && user.phone !== firebasePhone) {
+      return res.status(400).json({ error: 'Phone number does not match your account' });
+    }
+
+    // Consume the OTP entry
+    authOtpStore.delete(userId);
+
+    // Mark verified if registration
+    if (stored.type === 'register') {
+      await prisma.user.update({ where: { id: userId }, data: { isVerified: true } });
+      if (user.email) sendWelcomeEmail(user.email, user.name);
+    }
+
+    const token = generateToken(user.id, 'user');
+    res.json({
+      type: 'user',
+      token,
+      user: {
+        id: user.id, name: user.name, email: user.email, phone: user.phone,
+        role: user.role, barangay: user.barangay, language: user.language,
         avatarUrl: user.avatarUrl || null,
       },
     });

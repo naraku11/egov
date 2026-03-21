@@ -36,6 +36,7 @@ import {
   verifyAuthOtp,
   resendAuthOtp,
   verifyFirebasePhone,
+  verifyPhoneOtp,
 } from '../controllers/authController.js';
 import { authenticate } from '../middleware/auth.js';
 import { avatarUpload } from '../middleware/upload.js';
@@ -78,6 +79,9 @@ router.post('/resend-otp', resendAuthOtp);
 
 /** Verify Firebase Phone Auth token and issue a local JWT. */
 router.post('/firebase/verify-phone', verifyFirebasePhone);
+
+/** Verify phone via Firebase during login/register OTP flow. */
+router.post('/verify-phone-otp', verifyPhoneOtp);
 
 // ---------------------------------------------------------------------------
 // Protected routes — valid JWT required (authenticate middleware)
