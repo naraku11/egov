@@ -55,7 +55,7 @@ const resetStore = new Map();
  * @param {string} type   - 'login' or 'register'.
  * @returns {{ sentTo: { email: boolean, phone: boolean } }}
  */
-const generateAndSendAuthOtp = (userId, user, type) => {
+const generateAndSendAuthOtp = async (userId, user, type) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   authOtpStore.set(userId, { otp, expiresAt: Date.now() + 5 * 60 * 1000, type });
 
@@ -63,14 +63,22 @@ const generateAndSendAuthOtp = (userId, user, type) => {
 
   // Send to email via SMTP
   if (user.email) {
-    sendOtpEmail(user.email, user.name, otp);
-    sentTo.email = true;
+    try {
+      await sendOtpEmail(user.email, user.name, otp);
+      sentTo.email = true;
+    } catch (err) {
+      console.error(`📧 OTP email failed for ${user.email}:`, err.message);
+    }
   }
 
-  // Send to phone via SMS (stub — wire to Semaphore/Twilio for real delivery)
+  // Send to phone via Semaphore SMS
   if (user.phone) {
-    sendSmsNotification(user.phone, `[E-Gov Aluguinsan] Your verification code is: ${otp}. Valid for 5 minutes.`);
-    sentTo.phone = true;
+    try {
+      const sent = await sendSmsNotification(user.phone, `[E-Gov Aluguinsan] Your verification code is: ${otp}. Valid for 5 minutes.`);
+      sentTo.phone = sent;
+    } catch (err) {
+      console.error(`📱 OTP SMS failed for ${user.phone}:`, err.message);
+    }
   }
 
   console.log(`🔐 Auth OTP for ${user.name} (${userId}): ${otp} [${type}]`);
@@ -126,7 +134,7 @@ export const register = async (req, res, next) => {
     });
 
     // Send OTP to email and/or phone for verification
-    const { sentTo } = generateAndSendAuthOtp(user.id, user, 'register');
+    const { sentTo } = await generateAndSendAuthOtp(user.id, user, 'register');
 
     res.status(201).json({
       requiresOtp: true,
@@ -467,7 +475,7 @@ export const unifiedLogin = async (req, res, next) => {
         }
 
         // CLIENT users require OTP verification
-        const { sentTo } = generateAndSendAuthOtp(user.id, user, 'login');
+        const { sentTo } = await generateAndSendAuthOtp(user.id, user, 'login');
         return res.json({
           requiresOtp: true,
           userId: user.id,
@@ -665,7 +673,7 @@ export const resendAuthOtp = async (req, res, next) => {
     const existing = authOtpStore.get(userId);
     const type = existing?.type || 'login';
 
-    const { sentTo } = generateAndSendAuthOtp(userId, user, type);
+    const { sentTo } = await generateAndSendAuthOtp(userId, user, type);
     res.json({ message: 'OTP resent successfully', sentTo });
   } catch (err) {
     next(err);

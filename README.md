@@ -65,6 +65,8 @@ SMTP_USER=info@aluguinsan-egov.online
 SMTP_PASS=your-smtp-password
 EMAIL_FROM=info@aluguinsan-egov.online
 FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json
+SEMAPHORE_API_KEY=your-semaphore-api-key
+SEMAPHORE_SENDER_NAME=EGOV
 ```
 
 **Frontend** (`frontend/.env`):
@@ -148,7 +150,7 @@ cd frontend && npm run build
 | Servant | Email + password | No |
 | Admin | Email + password | No |
 
-OTP is sent to both **email** (via SMTP) and **phone** (SMS stub — wire to Semaphore/Twilio for production delivery).
+OTP is sent to both **email** (via SMTP) and **phone** (via [Semaphore](https://semaphore.co) SMS gateway). Set `SEMAPHORE_API_KEY` in backend `.env` to enable SMS delivery.
 
 ---
 

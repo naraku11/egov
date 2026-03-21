@@ -232,14 +232,48 @@ export const sendOtpEmail = async (to, name, code) => {
   await sendEmailNotification(to, '[E-Gov] Verification Code', html);
 };
 
-// ─── SMS (stub) ──────────────────────────────────────────────────────────────
+// ─── SMS (Semaphore) ─────────────────────────────────────────────────────────
 
 /**
- * Sends an SMS notification (stub — integrate Twilio/Semaphore for production).
+ * Sends an SMS notification via Semaphore (semaphore.co) — a Philippine SMS gateway.
+ * Falls back to console logging when SEMAPHORE_API_KEY is not configured.
  *
- * @param {string} to      - Recipient phone number
+ * @param {string} to      - Recipient phone number (09xx or +639xx format)
  * @param {string} message - SMS body text
+ * @returns {Promise<boolean>} true if sent successfully
  */
 export const sendSmsNotification = async (to, message) => {
-  console.log(`📱 SMS to ${to}: ${message}`);
+  const apiKey = process.env.SEMAPHORE_API_KEY;
+  if (!apiKey || !to) {
+    console.log(`📱 SMS (no provider): ${to}: ${message}`);
+    return false;
+  }
+
+  try {
+    // Normalize PH phone: +639xx → 09xx, keep 09xx as-is
+    const phone = to.startsWith('+63') ? '0' + to.slice(3) : to;
+
+    const res = await fetch('https://api.semaphore.co/api/v4/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apikey: apiKey,
+        number: phone,
+        message,
+        sendername: process.env.SEMAPHORE_SENDER_NAME || 'EGOV',
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`📱 SMS failed to ${phone}:`, err);
+      return false;
+    }
+
+    console.log(`📱 SMS sent to ${phone}`);
+    return true;
+  } catch (err) {
+    console.error(`📱 SMS error to ${to}:`, err.message);
+    return false;
+  }
 };
