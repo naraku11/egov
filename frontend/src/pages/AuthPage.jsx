@@ -514,7 +514,7 @@ export default function AuthPage() {
                       <input
                         type="text"
                         className="input-field pl-10"
-                        placeholder="email@example.com or 09xxxxxxxxx"
+                        placeholder="email@gmail.com.com or 09xxxxxxxxx"
                         value={loginData.emailOrPhone}
                         onChange={e => setLoginData({ ...loginData, emailOrPhone: e.target.value })}
                         required
@@ -830,7 +830,7 @@ export default function AuthPage() {
                           <input
                             type="text"
                             className="input-field pl-10"
-                            placeholder="email@example.com or 09xxxxxxxxx"
+                            placeholder="email@gmail.com or 09xxxxxxxxx"
                             value={resetContact}
                             onChange={e => setResetContact(e.target.value)}
                             required
