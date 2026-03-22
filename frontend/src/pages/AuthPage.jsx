@@ -425,10 +425,31 @@ export default function AuthPage() {
       toast.success('SMS code sent to your phone');
     } catch (err) {
       console.error('Firebase SMS error:', err);
-      toast.error(err.message || 'Failed to send SMS');
       clearRecaptcha();
+      // On rate limit or other Firebase errors, offer email fallback
+      if (err.code === 'auth/too-many-requests' || err.code === 'auth/captcha-check-failed' || err.code === 'auth/billing-not-enabled') {
+        toast.error('SMS unavailable. Sending to email instead...');
+        handleFallbackToEmail();
+      } else {
+        toast.error(err.message || 'Failed to send SMS');
+      }
     } finally {
       setSendingSms(false);
+    }
+  };
+
+  /**
+   * Fallback: request backend to send email OTP instead of SMS.
+   */
+  const handleFallbackToEmail = async () => {
+    try {
+      await api.post('/auth/resend-otp', { userId: pendingUserId, forceEmail: true });
+      setOtpSentTo({ email: true, phone: false });
+      setPendingPhone(null);
+      setSmsStep(null);
+      toast.success('Verification code sent to your email');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to send email OTP');
     }
   };
 
@@ -778,6 +799,11 @@ export default function AuthPage() {
                         <Smartphone className="w-4 h-4" />
                         {sendingSms ? 'Sending SMS...' : 'Send SMS Code'}
                       </button>
+                      <div className="text-center">
+                        <button type="button" onClick={handleFallbackToEmail} className="text-sm text-gray-500 hover:text-primary-600">
+                          Send to email instead
+                        </button>
+                      </div>
                     </>
                   )}
 

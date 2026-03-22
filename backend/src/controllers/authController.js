@@ -21,8 +21,55 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import path from 'path';
+import dns from 'dns';
+import { promisify } from 'util';
 import { sendWelcomeEmail, sendResetCodeEmail, sendOtpEmail } from '../services/notification.js';
 import { getFirebaseAuth } from '../lib/firebase.js';
+
+const resolveMx = promisify(dns.resolveMx);
+
+/**
+ * Validates an email address:
+ *  1. Format check (regex)
+ *  2. Block disposable/temp email domains
+ *  3. MX record lookup — domain must have a mail server
+ *
+ * @param {string} email
+ * @returns {{ valid: boolean, reason?: string }}
+ */
+const validateEmail = async (email) => {
+  // Basic format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return { valid: false, reason: 'Invalid email format' };
+  }
+
+  const domain = email.split('@')[1].toLowerCase();
+
+  // Block common disposable/temporary email providers
+  const disposable = [
+    'tempmail.com', 'throwaway.email', 'guerrillamail.com', 'mailinator.com',
+    'yopmail.com', 'sharklasers.com', 'guerrillamailblock.com', 'grr.la',
+    'dispostable.com', 'trashmail.com', 'fakeinbox.com', 'tempail.com',
+    'temp-mail.org', 'emailondeck.com', 'getnada.com', 'mohmal.com',
+    'maildrop.cc', 'discard.email', '10minutemail.com', 'minutemail.com',
+  ];
+  if (disposable.includes(domain)) {
+    return { valid: false, reason: 'Disposable email addresses are not allowed' };
+  }
+
+  // MX record check — verify domain can receive email
+  try {
+    const records = await resolveMx(domain);
+    if (!records || records.length === 0) {
+      return { valid: false, reason: 'Email domain does not accept mail' };
+    }
+  } catch {
+    return { valid: false, reason: 'Email domain does not exist' };
+  }
+
+  return { valid: true };
+};
 
 /**
  * Creates a signed JWT for the given entity.
@@ -126,6 +173,14 @@ export const register = async (req, res, next) => {
     }
     if (!email && !phone) {
       return res.status(400).json({ error: 'Email or phone is required' });
+    }
+
+    // Validate email is legitimate (format, not disposable, MX records exist)
+    if (email) {
+      const emailCheck = await validateEmail(email);
+      if (!emailCheck.valid) {
+        return res.status(400).json({ error: emailCheck.reason });
+      }
     }
 
     // Prevent duplicate accounts on the same email or phone
@@ -722,7 +777,7 @@ export const verifyAuthOtp = async (req, res, next) => {
  */
 export const resendAuthOtp = async (req, res, next) => {
   try {
-    const { userId } = req.body;
+    const { userId, forceEmail } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId is required' });
 
     const existing = authOtpStore.get(userId);
@@ -739,15 +794,25 @@ export const resendAuthOtp = async (req, res, next) => {
 
     // Generate new OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const sentTo = { email: false, phone: !!user.phone };
+    const sentTo = { email: false, phone: false };
 
-    if (!user.phone && user.email) {
+    // forceEmail = true → SMS failed, fall back to email
+    if (forceEmail && user.email) {
       try {
         await sendOtpEmail(user.email, user.name, otp);
         sentTo.email = true;
       } catch (err) {
         console.error(`📧 OTP email failed for ${user.email}:`, err.message);
       }
+    } else if (!user.phone && user.email) {
+      try {
+        await sendOtpEmail(user.email, user.name, otp);
+        sentTo.email = true;
+      } catch (err) {
+        console.error(`📧 OTP email failed for ${user.email}:`, err.message);
+      }
+    } else {
+      sentTo.phone = !!user.phone;
     }
 
     // Update the store — preserve pendingUser for registrations
