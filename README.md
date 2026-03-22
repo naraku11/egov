@@ -136,19 +136,24 @@ cd frontend && npm run build
 - Update availability (Available / Busy / Offline)
 
 ### Admin Flow
-- Admin panel with tabs: Overview, Tickets, Servants, Citizens, Reports, SLA Breaches, Announcements, Directory
+- Admin panel with tabs: Overview, Tickets, Servants, Citizens, SLA Breaches, Announcements, Directory
 - System stats with 7-day trend chart and department breakdown
 - Manage servants (create, edit, remove with department assignment)
 - Manage citizens (edit, archive, delete — blocked if citizen has tickets)
 - Archive/reactivate tickets (reactivation requires admin password)
 - Permanently delete tickets with cascade (messages, attachments, notifications)
-- **Analytics Reports** with period selector (1 Day, 15 Days, Annual)
-  - KPI cards: total, resolved, pending, resolution rate, avg resolution time, SLA compliance
-  - Daily trend chart (created vs resolved), status pie chart, priority & department bar charts
-  - Public servant performance table (assigned, resolved, rate, avg rating)
-  - **Export as detailed PDF** (multi-page A4 with all charts and tables)
 - Manage announcements (Info / Alert / Event categories, draft/published)
 - Manage barangay directory (officials, emergency services, offices)
+
+### Reports (Admin — Navbar)
+- Standalone analytics page accessible from the admin navbar (`/reports`)
+- Period selector: **1 Day**, **15 Days**, **Annual**
+- KPI summary: total tickets, resolved, pending, escalated, SLA compliance %, avg resolution time
+- Ticket trend dual-line chart (created vs resolved per day)
+- Status distribution donut chart, priority bar chart, department horizontal bar chart
+- Public servant performance table with resolution rate progress bars and star ratings
+- **Export CSV** — all data serialised to downloadable CSV file
+- **Export PDF** — detailed multi-page A4 report with all charts and tables (jsPDF + html2canvas)
 
 ---
 

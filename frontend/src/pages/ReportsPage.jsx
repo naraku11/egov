@@ -2,7 +2,7 @@
  * ReportsPage.jsx
  *
  * Admin-only analytics dashboard that surfaces system-wide ticket performance
- * metrics for a configurable date range (7 / 30 / 90 days).
+ * metrics for a configurable date range (1 Day / 15 Days / Annual).
  *
  * Sections:
  *  1. KPI summary cards — total tickets, resolved, pending, escalated,
@@ -16,16 +16,18 @@
  *     resolution rate progress bar, and average citizen star rating.
  *     Live availability status is merged from the /servants endpoint.
  *
- * A "Export CSV" button serialises all visible data to a downloadable file.
+ * An "Export CSV" button serialises all visible data to a downloadable file.
+ * An "Export PDF" button captures the report area as a multi-page A4 PDF
+ * using html2canvas + jsPDF.
  * A "Refresh" button re-fetches both the report and servant data without
  * re-mounting the page.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   FileText, CheckCircle, AlertTriangle, Star, Users,
   Clock, Download, RefreshCw, BarChart2, TrendingUp, Building2,
-  Activity, ShieldCheck,
+  Activity, ShieldCheck, FileDown,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
@@ -61,9 +63,9 @@ const PRIORITY_COLORS = {
 
 /** Date-range options exposed to the user via the range selector. */
 const RANGE_OPTIONS = [
-  { label: '7 Days',  value: 7  },
-  { label: '30 Days', value: 30 },
-  { label: '90 Days', value: 90 },
+  { label: '1 Day',   value: 1   },
+  { label: '15 Days', value: 15  },
+  { label: 'Annual',  value: 365 },
 ];
 
 /**
@@ -111,7 +113,11 @@ export default function ReportsPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   // Currently selected date range in days
-  const [range, setRange]       = useState(30);
+  const [range, setRange]       = useState(15);
+  // True while PDF export is generating
+  const [exporting, setExporting] = useState(false);
+  // Ref for the printable report area
+  const reportRef = useRef(null);
   // Timestamp of the most recent successful data fetch
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
@@ -155,7 +161,7 @@ export default function ReportsPage() {
     if (!report) return;
     const rows = [
       ['Report Generated', format(new Date(), 'yyyy-MM-dd HH:mm')],
-      ['Date Range', `Last ${range} days`],
+      ['Date Range', RANGE_OPTIONS.find(o => o.value === range)?.label || `Last ${range} days`],
       [],
       ['KPI Summary'],
       ['Metric', 'Value'],
@@ -195,10 +201,78 @@ export default function ReportsPage() {
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `egov-report-${range}d-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    const rangeLabel = RANGE_OPTIONS.find(o => o.value === range)?.label || `${range}d`;
+    a.download = `EGov_Report_${rangeLabel.replace(/\s/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success('Report exported as CSV');
+  };
+
+  /**
+   * Captures the report section as a high-resolution image and exports it as a
+   * multi-page A4 PDF with header branding on each page.
+   */
+  const handleExportPDF = async () => {
+    if (!reportRef.current) return;
+    setExporting(true);
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const { jsPDF } = await import('jspdf');
+
+      const el = reportRef.current;
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const imgW = canvas.width;
+      const imgH = canvas.height;
+
+      const pdfW = 210;
+      const pdfH = 297;
+      const margin = 10;
+      const contentW = pdfW - margin * 2;
+      const ratio = contentW / imgW;
+      const scaledH = imgH * ratio;
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+
+      if (scaledH <= pdfH - margin * 2) {
+        pdf.addImage(imgData, 'PNG', margin, margin, contentW, scaledH);
+      } else {
+        const pageContentH = pdfH - margin * 2;
+        const sliceH = pageContentH / ratio;
+        let yOffset = 0;
+        let page = 0;
+
+        while (yOffset < imgH) {
+          if (page > 0) pdf.addPage();
+          const remaining = Math.min(sliceH, imgH - yOffset);
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = imgW;
+          sliceCanvas.height = remaining;
+          const ctx = sliceCanvas.getContext('2d');
+          ctx.drawImage(canvas, 0, -yOffset);
+          const sliceImg = sliceCanvas.toDataURL('image/png');
+          const sliceScaledH = remaining * ratio;
+          pdf.addImage(sliceImg, 'PNG', margin, margin, contentW, sliceScaledH);
+          yOffset += sliceH;
+          page++;
+        }
+      }
+
+      const rangeLabel = RANGE_OPTIONS.find(o => o.value === range)?.label || `${range}d`;
+      pdf.save(`EGov_Report_${rangeLabel.replace(/\s/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+      toast.success('Report exported as PDF');
+    } catch (err) {
+      console.error('PDF export error:', err);
+      toast.error('Failed to export PDF');
+    } finally {
+      setExporting(false);
+    }
   };
 
   // Full-page loading spinner shown on first load before any data is available
@@ -334,15 +408,42 @@ export default function ReportsPage() {
               Refresh
             </button>
             {/* CSV export */}
-            <button onClick={handleExportCSV} className="btn-primary flex items-center gap-2 text-sm">
+            <button onClick={handleExportCSV} className="btn-secondary flex items-center gap-2 text-sm">
               <Download className="w-4 h-4" />
-              Export CSV
+              CSV
+            </button>
+            {/* PDF export */}
+            <button
+              onClick={handleExportPDF}
+              disabled={exporting}
+              className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50"
+            >
+              <FileDown className="w-4 h-4" />
+              {exporting ? 'Exporting...' : 'Export PDF'}
             </button>
           </div>
         </div>
 
+        {/* ── Printable report area (captured by reportRef for PDF export) ── */}
+        <div ref={reportRef} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-6">
+
+        {/* Report header — shown in PDF */}
+        <div className="border-b border-gray-100 pb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Municipality of Aluguinsan — E-Gov Analytics Report</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Period: <span className="font-medium text-gray-700">{RANGE_OPTIONS.find(o => o.value === range)?.label || `${range} Days`}</span>
+              {' · '}Generated: {format(new Date(), 'MMMM d, yyyy h:mm a')}
+            </p>
+          </div>
+          <div className="hidden sm:flex items-center gap-2 bg-primary-50 text-primary-700 px-3 py-1.5 rounded-lg text-xs font-medium">
+            <ShieldCheck className="w-4 h-4" />
+            Official Report
+          </div>
+        </div>
+
         {/* ── KPI summary row — 6 metric cards ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
           <StatCard
             label="Total Tickets"
             value={report.total}
@@ -385,11 +486,11 @@ export default function ReportsPage() {
         </div>
 
         {/* ── Ticket Trend — full-width dual-line chart (created vs resolved) ── */}
-        <div className="card mb-6">
+        <div className="border border-gray-100 rounded-xl p-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-primary-600" />
-              Ticket Trend — Last {range} Days
+              Ticket Trend — {RANGE_OPTIONS.find(o => o.value === range)?.label || `Last ${range} Days`}
             </h3>
             {/* Chart legend */}
             <div className="flex items-center gap-4">
@@ -447,10 +548,10 @@ export default function ReportsPage() {
         </div>
 
         {/* ── Status Distribution donut + Priority Breakdown bar chart (side by side) ── */}
-        <div className="grid lg:grid-cols-2 gap-6 mb-6">
+        <div className="grid lg:grid-cols-2 gap-6">
 
           {/* Status donut (PieChart with hole) */}
-          <div className="card">
+          <div className="border border-gray-100 rounded-xl p-4">
             <h3 className="font-semibold text-gray-900 mb-4 text-sm">Status Distribution</h3>
             {statusData.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-12">No data</p>
@@ -489,7 +590,7 @@ export default function ReportsPage() {
           </div>
 
           {/* Priority breakdown vertical bar chart */}
-          <div className="card">
+          <div className="border border-gray-100 rounded-xl p-4">
             <h3 className="font-semibold text-gray-900 mb-4 text-sm">Priority Breakdown</h3>
             {priorityData.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-12">No data</p>
@@ -521,7 +622,7 @@ export default function ReportsPage() {
         </div>
 
         {/* ── Tickets by Department — horizontal bar chart coloured per department ── */}
-        <div className="card mb-6">
+        <div className="border border-gray-100 rounded-xl p-4">
           <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Building2 className="w-4 h-4 text-primary-600" />
             Tickets by Department
@@ -545,7 +646,7 @@ export default function ReportsPage() {
         </div>
 
         {/* ── Servant Performance table ── */}
-        <div className="card">
+        <div className="border border-gray-100 rounded-xl p-4">
           <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Users className="w-4 h-4 text-primary-600" />
             Servant Performance
@@ -633,6 +734,14 @@ export default function ReportsPage() {
             </table>
           </div>
         </div>
+
+        {/* Report footer — visible in PDF */}
+        <div className="border-t border-gray-100 pt-4 flex items-center justify-between text-xs text-gray-400">
+          <p>Aluguinsan E-Government Assistance System</p>
+          <p>Generated on {format(new Date(), 'MMMM d, yyyy')} at {format(new Date(), 'h:mm a')}</p>
+        </div>
+
+        </div>{/* end reportRef */}
 
       </div>
     </div>
