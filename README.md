@@ -95,6 +95,7 @@ Import in order via phpMyAdmin:
 3. `sql/03-seed-servants.sql` — 11 government servants
 4. `sql/04-seed-citizens.sql` — 10 citizen accounts
 5. `sql/05-add-message-attachments.sql` — Message attachments column
+6. `sql/06-seed-directory.sql` — Barangay directory entries (23 records)
 
 ### 4. Run
 

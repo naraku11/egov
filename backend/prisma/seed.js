@@ -307,11 +307,66 @@ async function main() {
     console.log(`✅ Citizen: ${c.name}`);
   }
 
+  // ===========================================================================
+  // 5. Barangay Directory entries
+  // ===========================================================================
+  console.log('\n📒 Seeding directory entries...');
+
+  const directoryEntries = [
+    // ── Officials ──
+    { id: 'dir_off_001', name: 'Hon. Christopher Garcia', position: 'Municipal Mayor', department: "Mayor's Office", phone: '032-480-9001', email: 'mayor@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'OFFICIAL' },
+    { id: 'dir_off_002', name: 'Hon. Maria Elena Santos', position: 'Vice Mayor', department: 'Office of the Vice Mayor', phone: '032-480-9002', email: 'vicemayor@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'OFFICIAL' },
+    { id: 'dir_off_003', name: 'Engr. Roberto Dela Cruz', position: 'Municipal Engineer', department: 'Municipal Engineering Office', phone: '032-480-9010', email: 'engineering@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'OFFICIAL' },
+    { id: 'dir_off_004', name: 'Dr. Rosalinda Mercado', position: 'Municipal Health Officer', department: 'Rural Health Unit', phone: '032-480-9020', email: 'rhu@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Rural Health Unit Bldg, Poblacion, Aluguinsan', category: 'OFFICIAL' },
+    { id: 'dir_off_005', name: 'Mrs. Carolina Villanueva', position: 'MSWDO Head', department: 'Municipal Social Welfare & Development Office', phone: '032-480-9030', email: 'mswdo@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'OFFICIAL' },
+    { id: 'dir_off_006', name: 'Mr. Antonio Ramos', position: 'Municipal Planning & Dev. Coordinator', department: 'Municipal Planning & Development Office', phone: '032-480-9040', email: 'mpdo@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'OFFICIAL' },
+    { id: 'dir_off_007', name: 'Mrs. Juanita Lopez', position: 'Municipal Treasurer', department: "Treasurer's Office", phone: '032-480-9050', email: 'treasurer@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'OFFICIAL' },
+    { id: 'dir_off_008', name: 'Mr. Fernando Torres', position: 'Municipal Environment & Natural Resources Officer', department: 'MENRO', phone: '032-480-9060', email: 'menro@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'OFFICIAL' },
+    { id: 'dir_off_009', name: 'Mrs. Gloria Reyes', position: 'Municipal Civil Registrar', department: 'Office of the Civil Registrar', phone: '032-480-9070', email: 'civilregistrar@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'OFFICIAL' },
+    { id: 'dir_off_010', name: 'Mr. Eduardo Navarro', position: 'Municipal Assessor', department: "Municipal Assessor's Office", phone: '032-480-9080', email: 'assessor@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'OFFICIAL' },
+    // ── Emergency Services ──
+    { id: 'dir_emer_001', name: 'PNP Aluguinsan', position: 'Municipal Police Station', department: 'Philippine National Police', phone: '032-480-9100', email: 'pnp.aluguinsan@pnp.gov.ph', officeHours: '24/7', address: 'Poblacion, Aluguinsan, Cebu', category: 'EMERGENCY' },
+    { id: 'dir_emer_002', name: 'BFP Aluguinsan', position: 'Fire Station', department: 'Bureau of Fire Protection', phone: '032-480-9110', email: null, officeHours: '24/7', address: 'Poblacion, Aluguinsan, Cebu', category: 'EMERGENCY' },
+    { id: 'dir_emer_003', name: 'MDRRMO Aluguinsan', position: 'Disaster Risk Reduction & Management Office', department: 'MDRRMO', phone: '032-480-9120', email: 'mdrrmo@aluguinsan.gov.ph', officeHours: '24/7', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'EMERGENCY' },
+    { id: 'dir_emer_004', name: 'Aluguinsan Rural Health Unit', position: 'Emergency Health Services', department: 'Rural Health Unit', phone: '032-480-9020', email: 'rhu@aluguinsan.gov.ph', officeHours: '24/7 (Emergency)', address: 'Rural Health Unit Bldg, Poblacion, Aluguinsan', category: 'EMERGENCY' },
+    { id: 'dir_emer_005', name: 'Philippine Red Cross – Cebu Chapter', position: 'Disaster Response & Blood Services', department: 'Philippine Red Cross', phone: '032-253-6325', email: null, officeHours: '24/7 Hotline', address: 'Cebu City (serves Aluguinsan area)', category: 'EMERGENCY' },
+    // ── Government Services ──
+    { id: 'dir_svc_001', name: 'Municipal Business Permits & Licensing', position: 'Business Permit Applications & Renewal', department: "Mayor's Office – BPLO", phone: '032-480-9090', email: 'bplo@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'SERVICE' },
+    { id: 'dir_svc_002', name: 'Municipal Agriculture Office', position: 'Farmer Registration, Agri-assistance Programs', department: 'Municipal Agriculture Office', phone: '032-480-9130', email: 'agriculture@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'SERVICE' },
+    { id: 'dir_svc_003', name: 'Senior Citizens Affairs Office', position: 'Senior Citizen ID, Benefits & Programs', department: 'OSCA / MSWDO', phone: '032-480-9031', email: 'osca@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'SERVICE' },
+    { id: 'dir_svc_004', name: 'Persons with Disability Affairs', position: 'PWD ID Registration & Support Programs', department: 'MSWDO', phone: '032-480-9032', email: 'pwd@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'SERVICE' },
+    { id: 'dir_svc_005', name: 'ALUGUINSAN Water District', position: 'Water Service Connection & Billing', department: 'Aluguinsan Water District', phone: '032-480-9140', email: null, officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Poblacion, Aluguinsan, Cebu', category: 'SERVICE' },
+    { id: 'dir_svc_006', name: 'VECO / Electric Cooperative', position: 'Power Connection, Billing & Outage Reports', department: 'Visayan Electric / CEBECO', phone: '032-232-8888', email: null, officeHours: 'Mon–Sat 8:00 AM – 5:00 PM', address: 'Service Center, Cebu (covers Aluguinsan)', category: 'SERVICE' },
+    { id: 'dir_svc_007', name: 'PhilHealth Office – Aluguinsan', position: 'PhilHealth Membership & Claims Assistance', department: 'PhilHealth', phone: '032-480-9150', email: null, officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'SERVICE' },
+    { id: 'dir_svc_008', name: 'Sangguniang Bayan Office', position: 'Legislative Services & Resolutions', department: 'Sangguniang Bayan', phone: '032-480-9003', email: 'sb@aluguinsan.gov.ph', officeHours: 'Mon–Fri 8:00 AM – 5:00 PM', address: 'Municipal Hall, Poblacion, Aluguinsan', category: 'SERVICE' },
+  ];
+
+  for (const d of directoryEntries) {
+    await prisma.directoryEntry.upsert({
+      where: { id: d.id },
+      update: {},
+      create: {
+        id:          d.id,
+        name:        d.name,
+        position:    d.position,
+        department:  d.department,
+        phone:       d.phone,
+        email:       d.email,
+        officeHours: d.officeHours,
+        address:     d.address,
+        category:    d.category,
+        isActive:    true,
+      },
+    });
+  }
+  console.log(`✅ Directory: ${directoryEntries.length} entries seeded`);
+
   // Print a summary of default credentials for developer reference
   console.log('\n🎉 Seeding complete!');
   console.log('👤 Admin: admin@aluguinsan.gov.ph / admin123');
   console.log('👤 Citizens (10): juan.delacruz@example.com, maria.clara@example.com, ... / resident123');
   console.log('👤 Servants (11): maria.santos@aluguinsan.gov.ph, ... / servant123');
+  console.log('📒 Directory: 23 entries (10 officials, 5 emergency, 8 services)');
 }
 
 // Run the seed and ensure the Prisma client is always disconnected afterwards,
