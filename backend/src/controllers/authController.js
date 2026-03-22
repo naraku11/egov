@@ -40,7 +40,8 @@ const generateToken = (id, type = 'user') => {
 // In-memory OTP store: phone → { otp, expiresAt }  (use Redis in production)
 const otpStore = new Map();
 
-// In-memory auth-OTP store: userId → { otp, expiresAt, type }  (login/register verification)
+// In-memory auth-OTP store: key → { otp, expiresAt, type, pendingUser? }
+// For login: key = userId. For register: key = generated pending ID (no DB record yet).
 const authOtpStore = new Map();
 
 // In-memory password-reset token store: emailOrPhone → { code, userId, expiresAt }
@@ -55,15 +56,41 @@ const resetStore = new Map();
  * @param {string} type   - 'login' or 'register'.
  * @returns {{ sentTo: { email: boolean, phone: boolean } }}
  */
-const generateAndSendAuthOtp = async (userId, user, type) => {
+/**
+ * @param {string} userId
+ * @param {object} user - { name, email, phone }
+ * @param {string} type - 'login' or 'register'
+ * @param {object} [opts]
+ * @param {boolean} [opts.preferEmail] - true when user logged in with email
+ * @param {boolean} [opts.preferPhone] - true when user logged in with phone
+ */
+const generateAndSendAuthOtp = async (userId, user, type, opts = {}) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   authOtpStore.set(userId, { otp, expiresAt: Date.now() + 5 * 60 * 1000, type });
 
-  const sentTo = { email: false, phone: !!user.phone };
+  const sentTo = { email: false, phone: false };
 
-  // If user has a phone → SMS via Firebase on the frontend (primary)
-  // If no phone → fall back to email OTP via SMTP
-  if (!user.phone && user.email) {
+  // Login: use the same channel the user logged in with
+  // Register: phone first (Firebase SMS), email fallback
+  const useEmail = opts.preferEmail && user.email;
+  const usePhone = opts.preferPhone && user.phone;
+
+  if (useEmail) {
+    // User logged in with email → send email OTP
+    try {
+      await sendOtpEmail(user.email, user.name, otp);
+      sentTo.email = true;
+    } catch (err) {
+      console.error(`📧 OTP email failed for ${user.email}:`, err.message);
+    }
+  } else if (usePhone) {
+    // User logged in with phone → Firebase SMS on frontend
+    sentTo.phone = true;
+  } else if (user.phone) {
+    // Default: phone first (Firebase SMS on frontend)
+    sentTo.phone = true;
+  } else if (user.email) {
+    // Fallback: email OTP
     try {
       await sendOtpEmail(user.email, user.name, otp);
       sentTo.email = true;
@@ -109,30 +136,44 @@ export const register = async (req, res, next) => {
       return res.status(409).json({ error: 'User already exists with this email or phone' });
     }
 
-    // Hash the password only if one was provided (phone-OTP users may not have one)
+    // Hash password now but DO NOT save to DB yet — wait for OTP verification
     const hashedPassword = password ? await bcrypt.hash(password, 10) : null;
 
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email: email || null,
-        phone: phone || null,
-        password: hashedPassword,
-        barangay,
-        address: address || null,
-        isVerified: false, // requires OTP verification
-      },
+    // Generate a temporary pending ID (not a real DB id)
+    const pendingId = 'pending_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+
+    const pendingUser = { name, email: email || null, phone: phone || null, password: hashedPassword, barangay, address: address || null };
+
+    // Generate OTP and store pending registration data alongside it
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const sentTo = { email: false, phone: !!pendingUser.phone };
+
+    // If user has phone → SMS via Firebase on frontend (primary)
+    // If no phone → email OTP as fallback
+    if (!pendingUser.phone && pendingUser.email) {
+      try {
+        await sendOtpEmail(pendingUser.email, pendingUser.name, otp);
+        sentTo.email = true;
+      } catch (err) {
+        console.error(`📧 OTP email failed for ${pendingUser.email}:`, err.message);
+      }
+    }
+
+    authOtpStore.set(pendingId, {
+      otp,
+      expiresAt: Date.now() + 5 * 60 * 1000,
+      type: 'register',
+      pendingUser,
     });
 
-    // Send OTP to email and/or phone for verification
-    const otpResult = await generateAndSendAuthOtp(user.id, user, 'register');
+    console.log(`🔐 Register OTP for ${name} (${pendingId}): ${otp}`);
 
-    res.status(201).json({
+    res.status(200).json({
       requiresOtp: true,
-      userId: user.id,
-      sentTo: otpResult.sentTo,
-      phone: otpResult.phone,
-      message: 'Registration successful. Please verify with the OTP sent to your email/phone.',
+      userId: pendingId,
+      sentTo,
+      phone: pendingUser.phone,
+      message: 'Please verify with the OTP to complete registration.',
     });
   } catch (err) {
     next(err);
@@ -467,7 +508,11 @@ export const unifiedLogin = async (req, res, next) => {
         }
 
         // CLIENT users require OTP verification
-        const { sentTo, phone } = await generateAndSendAuthOtp(user.id, user, 'login');
+        // Use the same channel they logged in with
+        const { sentTo, phone } = await generateAndSendAuthOtp(user.id, user, 'login', {
+          preferEmail: isEmail,
+          preferPhone: !isEmail,
+        });
         return res.json({
           requiresOtp: true,
           userId: user.id,
@@ -621,13 +666,34 @@ export const verifyAuthOtp = async (req, res, next) => {
     // Consume the OTP
     authOtpStore.delete(userId);
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    let user;
 
-    // If this was a registration OTP, mark the user as verified
-    if (stored.type === 'register') {
-      await prisma.user.update({ where: { id: userId }, data: { isVerified: true } });
+    if (stored.type === 'register' && stored.pendingUser) {
+      // Registration: NOW create the account in DB since OTP is verified
+      const p = stored.pendingUser;
+
+      // Re-check for duplicates (in case someone registered in the meantime)
+      const existing = await prisma.user.findFirst({
+        where: { OR: [p.email ? { email: p.email } : {}, p.phone ? { phone: p.phone } : {}].filter(o => Object.keys(o).length > 0) },
+      });
+      if (existing) return res.status(409).json({ error: 'An account with this email or phone was already created' });
+
+      user = await prisma.user.create({
+        data: {
+          name: p.name,
+          email: p.email,
+          phone: p.phone,
+          password: p.password,
+          barangay: p.barangay,
+          address: p.address,
+          isVerified: true,
+        },
+      });
       if (user.email) sendWelcomeEmail(user.email, user.name);
+    } else {
+      // Login: user already exists in DB
+      user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) return res.status(404).json({ error: 'User not found' });
     }
 
     const token = generateToken(user.id, 'user');
@@ -659,15 +725,41 @@ export const resendAuthOtp = async (req, res, next) => {
     const { userId } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId is required' });
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    // Determine the type from any existing stored OTP, default to 'login'
     const existing = authOtpStore.get(userId);
     const type = existing?.type || 'login';
 
-    const { sentTo, phone } = await generateAndSendAuthOtp(userId, user, type);
-    res.json({ message: 'OTP resent successfully', sentTo, phone });
+    // For pending registrations, user data is in the OTP store (not in DB)
+    let user;
+    if (type === 'register' && existing?.pendingUser) {
+      user = existing.pendingUser;
+    } else {
+      user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Generate new OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const sentTo = { email: false, phone: !!user.phone };
+
+    if (!user.phone && user.email) {
+      try {
+        await sendOtpEmail(user.email, user.name, otp);
+        sentTo.email = true;
+      } catch (err) {
+        console.error(`📧 OTP email failed for ${user.email}:`, err.message);
+      }
+    }
+
+    // Update the store — preserve pendingUser for registrations
+    authOtpStore.set(userId, {
+      otp,
+      expiresAt: Date.now() + 5 * 60 * 1000,
+      type,
+      ...(existing?.pendingUser ? { pendingUser: existing.pendingUser } : {}),
+    });
+
+    console.log(`🔐 Resend OTP for ${user.name} (${userId}): ${otp} [${type}]`);
+    res.json({ message: 'OTP resent successfully', sentTo, phone: user.phone || null });
   } catch (err) {
     next(err);
   }
@@ -788,23 +880,44 @@ export const verifyPhoneOtp = async (req, res, next) => {
       return res.status(400).json({ error: 'No phone number in Firebase token' });
     }
 
-    // Normalize and match against user's phone
+    // Normalize Firebase phone to local format
     const normalizedPhone = firebasePhone.startsWith('+63') ? '0' + firebasePhone.slice(3) : firebasePhone;
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) return res.status(404).json({ error: 'User not found' });
 
-    if (user.phone !== normalizedPhone && user.phone !== firebasePhone) {
-      return res.status(400).json({ error: 'Phone number does not match your account' });
+    let user;
+
+    if (stored.type === 'register' && stored.pendingUser) {
+      // Registration: verify phone matches pending data, then create account
+      const p = stored.pendingUser;
+      if (p.phone !== normalizedPhone && p.phone !== firebasePhone) {
+        return res.status(400).json({ error: 'Phone number does not match your registration' });
+      }
+
+      // Re-check for duplicates
+      const existing = await prisma.user.findFirst({
+        where: { OR: [p.email ? { email: p.email } : {}, p.phone ? { phone: p.phone } : {}].filter(o => Object.keys(o).length > 0) },
+      });
+      if (existing) return res.status(409).json({ error: 'An account with this email or phone was already created' });
+
+      user = await prisma.user.create({
+        data: {
+          name: p.name, email: p.email, phone: p.phone,
+          password: p.password, barangay: p.barangay, address: p.address,
+          isVerified: true,
+        },
+      });
+      if (user.email) sendWelcomeEmail(user.email, user.name);
+    } else {
+      // Login: user already exists
+      user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      if (user.phone !== normalizedPhone && user.phone !== firebasePhone) {
+        return res.status(400).json({ error: 'Phone number does not match your account' });
+      }
     }
 
     // Consume the OTP entry
     authOtpStore.delete(userId);
-
-    // Mark verified if registration
-    if (stored.type === 'register') {
-      await prisma.user.update({ where: { id: userId }, data: { isVerified: true } });
-      if (user.email) sendWelcomeEmail(user.email, user.name);
-    }
 
     const token = generateToken(user.id, 'user');
     res.json({

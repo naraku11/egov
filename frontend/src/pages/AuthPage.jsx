@@ -26,7 +26,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { Eye, EyeOff, Phone, Mail, Lock, User, MapPin, ArrowLeft, KeyRound, Smartphone } from 'lucide-react';
+import { Eye, EyeOff, Phone, Mail, Lock, User, MapPin, ArrowLeft, KeyRound, Smartphone, Shield, FileText, MessageSquare } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
@@ -465,67 +465,139 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-blue-50 flex flex-col">
-      {/* Back-to-home link shown at the top of the page */}
-      <div className="p-4">
-        <Link to="/" className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-primary-600 transition-colors">
-          <ArrowLeft className="w-4 h-4" />
-          Back to Home
-        </Link>
+    <div className="min-h-screen flex">
+      {/* ── Left branding panel — visible on lg+ ─────────────────────── */}
+      <div className="hidden lg:flex lg:w-[480px] xl:w-[520px] bg-gradient-to-br from-primary-700 via-primary-600 to-blue-700 relative overflow-hidden flex-col justify-between p-10 text-white">
+        {/* Decorative circles */}
+        <div className="absolute -top-20 -right-20 w-72 h-72 bg-white/5 rounded-full" />
+        <div className="absolute -bottom-32 -left-16 w-96 h-96 bg-white/5 rounded-full" />
+        <div className="absolute top-1/2 right-10 w-32 h-32 bg-white/5 rounded-full" />
+
+        <div className="relative z-10">
+          <Link to="/" className="inline-flex items-center gap-2 text-sm text-white/70 hover:text-white transition-colors mb-12">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Home
+          </Link>
+          <div className="w-16 h-16 bg-white/15 backdrop-blur-sm rounded-2xl flex items-center justify-center text-white font-bold text-2xl mb-6 border border-white/20">
+            AG
+          </div>
+          <h1 className="text-3xl font-bold mb-3">Aluguinsan E-Gov Portal</h1>
+          <p className="text-primary-100 text-base leading-relaxed">
+            Your digital gateway to municipal services. Submit concerns, track progress, and connect with your local government — all in one place.
+          </p>
+        </div>
+
+        {/* Feature highlights */}
+        <div className="relative z-10 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
+              <FileText className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">Submit Concerns</p>
+              <p className="text-xs text-primary-200">Report issues directly to departments</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">Real-time Updates</p>
+              <p className="text-xs text-primary-200">Track your ticket status anytime</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
+              <Shield className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">Secure & Verified</p>
+              <p className="text-xs text-primary-200">OTP-protected citizen accounts</p>
+            </div>
+          </div>
+        </div>
+
+        <p className="relative z-10 text-xs text-primary-200">
+          Municipality of Aluguinsan, Cebu
+        </p>
       </div>
 
-      {/* Invisible reCAPTCHA container for Firebase Phone Auth */}
-      <div id="recaptcha-container"></div>
+      {/* ── Right form panel ─────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col bg-gradient-to-br from-gray-50 via-white to-primary-50/30">
+        {/* Mobile-only header */}
+        <div className="lg:hidden p-4 flex items-center justify-between">
+          <Link to="/" className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-primary-600 transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Home
+          </Link>
+        </div>
 
-      <div className="flex-1 flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          {/* Portal logo / branding block */}
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center text-white font-bold text-2xl mx-auto mb-3 shadow-lg">
-              AG
-            </div>
-            <h1 className="text-xl font-bold text-gray-900">Aluguinsan E-Gov Portal</h1>
-            <p className="text-sm text-gray-500">Municipality of Aluguinsan, Cebu</p>
-          </div>
+        {/* Invisible reCAPTCHA container for Firebase Phone Auth */}
+        <div id="recaptcha-container"></div>
 
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-            {/* Tab switcher — only Login and Register are shown; 'forgot' is
-                accessed via a link inside the Login form */}
-            <div className="flex border-b border-gray-100">
-              {[
-                { id: 'login', label: t('login') },
-                { id: 'register', label: t('register') },
-              ].map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => setTab(item.id)}
-                  className={`flex-1 py-3 text-xs font-medium transition-colors ${
-                    tab === item.id
-                      ? 'text-primary-600 border-b-2 border-primary-600'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
+        <div className="flex-1 flex items-center justify-center p-4 sm:p-8">
+          <div className="w-full max-w-md">
+            {/* Portal logo / branding block — compact on desktop (shown on left), full on mobile */}
+            <div className="text-center mb-6">
+              <div className="lg:hidden w-14 h-14 bg-primary-600 rounded-2xl flex items-center justify-center text-white font-bold text-xl mx-auto mb-3 shadow-lg shadow-primary-600/30">
+                AG
+              </div>
+              <h1 className="text-xl font-bold text-gray-900 lg:text-2xl">
+                <span className="hidden lg:inline">Welcome Back</span>
+                <span className="lg:hidden">Aluguinsan E-Gov Portal</span>
+              </h1>
+              <p className="text-sm text-gray-500 mt-1">
+                <span className="hidden lg:inline">Sign in to access your account</span>
+                <span className="lg:hidden">Municipality of Aluguinsan, Cebu</span>
+              </p>
             </div>
 
-            <div className="p-6">
+            <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 overflow-hidden">
+              {/* Tab switcher */}
+              <div className="flex border-b border-gray-100 bg-gray-50/50">
+                {[
+                  { id: 'login', label: t('login') },
+                  { id: 'register', label: t('register') },
+                ].map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => setTab(item.id)}
+                    className={`flex-1 py-3.5 text-sm font-medium transition-all relative ${
+                      tab === item.id
+                        ? 'text-primary-600'
+                        : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    {item.label}
+                    {tab === item.id && (
+                      <span className="absolute bottom-0 left-1/4 right-1/4 h-0.5 bg-primary-600 rounded-full" />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <div className="p-6 sm:p-8">
               {/* ── Login Form ────────────────────────────────────────────────
                   Accepts email or PH mobile number plus password.
                   A "Forgot password?" link switches the tab to 'forgot'.
               ──────────────────────────────────────────────────────────────── */}
               {tab === 'login' && (
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <h2 className="text-lg font-semibold text-gray-900">{t('welcomeBack')}</h2>
+                <form onSubmit={handleLogin} className="space-y-5">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('emailOrPhone')}</label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                    <h2 className="text-lg font-semibold text-gray-900">{t('welcomeBack')}</h2>
+                    <p className="text-sm text-gray-500 mt-0.5">Enter your credentials to continue</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('emailOrPhone')}</label>
+                    <div className="relative group">
+                      <div className="absolute left-3 top-2.5 w-5 h-5 rounded bg-primary-50 flex items-center justify-center group-focus-within:bg-primary-100 transition-colors">
+                        <Mail className="w-3.5 h-3.5 text-primary-500" />
+                      </div>
                       <input
                         type="text"
-                        className="input-field pl-10"
-                        placeholder="email@gmail.com.com or 09xxxxxxxxx"
+                        className="input-field pl-11 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                        placeholder="email@example.com or 09xxxxxxxxx"
                         value={loginData.emailOrPhone}
                         onChange={e => setLoginData({ ...loginData, emailOrPhone: e.target.value })}
                         required
@@ -534,57 +606,57 @@ export default function AuthPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('password')}</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-sm font-medium text-gray-700">{t('password')}</label>
+                      <button
+                        type="button"
+                        onClick={() => { setTab('forgot'); setResetStep(1); }}
+                        className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+                    <div className="relative group">
+                      <div className="absolute left-3 top-2.5 w-5 h-5 rounded bg-primary-50 flex items-center justify-center group-focus-within:bg-primary-100 transition-colors">
+                        <Lock className="w-3.5 h-3.5 text-primary-500" />
+                      </div>
                       <input
                         type={showPassword ? 'text' : 'password'}
-                        className="input-field pl-10 pr-10"
+                        className="input-field pl-11 pr-10 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                         placeholder="••••••••"
                         value={loginData.password}
                         onChange={e => setLoginData({ ...loginData, password: e.target.value })}
                         required
                       />
-                      {/* Eye toggle for the password field */}
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 transition-colors">
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
 
-                  <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
+                  <button type="submit" disabled={loading} className="btn-primary w-full py-3 text-sm font-semibold shadow-lg shadow-primary-600/25 hover:shadow-primary-600/40 transition-all">
                     {loading ? t('loading') : t('login')}
                   </button>
 
-                  {/* Forgot password link — switches to the forgot tab and resets to step 1 */}
-                  <div className="text-center">
-                    <button
-                      type="button"
-                      onClick={() => { setTab('forgot'); setResetStep(1); }}
-                      className="text-sm text-primary-600 hover:underline"
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
                   {/* Divider */}
-                  <div className="relative my-2">
+                  <div className="relative">
                     <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div>
-                    <div className="relative flex justify-center text-xs"><span className="bg-white px-3 text-gray-400">or</span></div>
+                    <div className="relative flex justify-center text-xs"><span className="bg-white px-3 text-gray-400 uppercase tracking-wider">or</span></div>
                   </div>
 
                   {/* Login with Phone OTP button */}
                   <button
                     type="button"
                     onClick={() => { setTab('phone-otp'); setOtpStep(1); setOtpCode(''); }}
-                    className="w-full py-2.5 border-2 border-primary-200 text-primary-600 rounded-lg font-medium text-sm hover:bg-primary-50 transition-colors flex items-center justify-center gap-2"
+                    className="w-full py-2.5 border border-gray-200 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 hover:border-gray-300 active:bg-gray-100 transition-all flex items-center justify-center gap-2"
                   >
-                    <Smartphone className="w-4 h-4" />
+                    <Smartphone className="w-4 h-4 text-primary-500" />
                     Login with Phone OTP
                   </button>
 
-                  <p className="text-center text-sm text-gray-600">
+                  <p className="text-center text-sm text-gray-500">
                     {t('dontHaveAccount')}{' '}
-                    <button type="button" onClick={() => setTab('register')} className="text-primary-600 font-medium hover:underline">
+                    <button type="button" onClick={() => setTab('register')} className="text-primary-600 font-semibold hover:underline">
                       {t('register')}
                     </button>
                   </p>
@@ -688,8 +760,8 @@ export default function AuthPage() {
                     <h2 className="text-lg font-semibold text-gray-900">Verify Your Identity</h2>
                   </div>
 
-                  {/* ── PRIMARY: SMS via Firebase (when user has phone) ──────── */}
-                  {pendingPhone && smsStep !== 'sms-sent' && (
+                  {/* ── SMS via Firebase (when backend says phone is primary) ──── */}
+                  {otpSentTo.phone && !otpSentTo.email && pendingPhone && smsStep !== 'sms-sent' && (
                     <>
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                         <p className="text-sm text-blue-700 flex items-center gap-1.5">
@@ -753,8 +825,8 @@ export default function AuthPage() {
                     </>
                   )}
 
-                  {/* ── FALLBACK: Email OTP (when no phone number) ───────────── */}
-                  {!pendingPhone && otpSentTo.email && (
+                  {/* ── Email OTP (when backend sent email verification) ──────── */}
+                  {otpSentTo.email && (
                     <>
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                         <p className="text-sm text-blue-700 flex items-center gap-1.5">
@@ -800,7 +872,7 @@ export default function AuthPage() {
                   )}
 
                   {/* No contact info at all */}
-                  {!pendingPhone && !otpSentTo.email && (
+                  {!otpSentTo.phone && !otpSentTo.email && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
                       No phone or email on your account. Please contact admin.
                     </div>
@@ -932,69 +1004,99 @@ export default function AuthPage() {
               ──────────────────────────────────────────────────────────────── */}
               {tab === 'register' && (
                 <form onSubmit={handleRegister} className="space-y-4">
-                  <h2 className="text-lg font-semibold text-gray-900">{t('createAccount')}</h2>
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">{t('createAccount')}</h2>
+                    <p className="text-sm text-gray-500 mt-0.5">Fill in your details to get started</p>
+                  </div>
+
                   {/* Full name */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('fullName')} *</label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-                      <input type="text" className="input-field pl-10" placeholder="Juan Dela Cruz" value={regData.name}
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('fullName')} <span className="text-red-400">*</span></label>
+                    <div className="relative group">
+                      <div className="absolute left-3 top-2.5 w-5 h-5 rounded bg-primary-50 flex items-center justify-center group-focus-within:bg-primary-100 transition-colors">
+                        <User className="w-3.5 h-3.5 text-primary-500" />
+                      </div>
+                      <input type="text" className="input-field pl-11 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500" placeholder="Juan Dela Cruz" value={regData.name}
                         onChange={e => setRegData({ ...regData, name: e.target.value })} required />
                     </div>
                   </div>
-                  {/* Email and phone side-by-side (both optional) */}
+
+                  {/* Email and phone */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('email')}</label>
-                      <input type="email" className="input-field" placeholder="email@example.com" value={regData.email}
-                        onChange={e => setRegData({ ...regData, email: e.target.value })} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('email')}</label>
+                      <div className="relative group">
+                        <div className="absolute left-3 top-2.5 w-5 h-5 rounded bg-blue-50 flex items-center justify-center group-focus-within:bg-blue-100 transition-colors">
+                          <Mail className="w-3.5 h-3.5 text-blue-500" />
+                        </div>
+                        <input type="email" className="input-field pl-11 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500" placeholder="email@example.com" value={regData.email}
+                          onChange={e => setRegData({ ...regData, email: e.target.value })} />
+                      </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('phone')}</label>
-                      <div className="relative">
-                        <Phone className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-                        <input type="tel" className="input-field pl-10" placeholder="09xxxxxxxxx" value={regData.phone}
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('phone')}</label>
+                      <div className="relative group">
+                        <div className="absolute left-3 top-2.5 w-5 h-5 rounded bg-green-50 flex items-center justify-center group-focus-within:bg-green-100 transition-colors">
+                          <Phone className="w-3.5 h-3.5 text-green-500" />
+                        </div>
+                        <input type="tel" className="input-field pl-11 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500" placeholder="09xxxxxxxxx" value={regData.phone}
                           onChange={e => setRegData({ ...regData, phone: e.target.value })} />
                       </div>
                     </div>
                   </div>
-                  {/* Barangay — required; options sourced from the translations file */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('barangay')} *</label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-                      <select className="input-field pl-10" value={regData.barangay}
-                        onChange={e => setRegData({ ...regData, barangay: e.target.value })} required>
-                        <option value="">Select Barangay</option>
-                        {barangays.map(b => <option key={b} value={b}>{b}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  {/* Optional street/purok address */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('address')}</label>
-                    <input type="text" className="input-field" placeholder="Street, Purok..." value={regData.address}
-                      onChange={e => setRegData({ ...regData, address: e.target.value })} />
-                  </div>
-                  {/* Password and confirmation side-by-side */}
+
+                  {/* Barangay and address */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('password')} *</label>
-                      <input type="password" className="input-field" placeholder="min 6 chars" value={regData.password}
-                        onChange={e => setRegData({ ...regData, password: e.target.value })} required minLength={6} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('barangay')} <span className="text-red-400">*</span></label>
+                      <div className="relative group">
+                        <div className="absolute left-3 top-2.5 w-5 h-5 rounded bg-orange-50 flex items-center justify-center group-focus-within:bg-orange-100 transition-colors">
+                          <MapPin className="w-3.5 h-3.5 text-orange-500" />
+                        </div>
+                        <select className="input-field pl-11 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500" value={regData.barangay}
+                          onChange={e => setRegData({ ...regData, barangay: e.target.value })} required>
+                          <option value="">Select Barangay</option>
+                          {barangays.map(b => <option key={b} value={b}>{b}</option>)}
+                        </select>
+                      </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('confirmPassword')} *</label>
-                      <input type="password" className="input-field" placeholder="••••••" value={regData.confirmPassword}
-                        onChange={e => setRegData({ ...regData, confirmPassword: e.target.value })} required />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('address')}</label>
+                      <input type="text" className="input-field focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500" placeholder="Street, Purok..." value={regData.address}
+                        onChange={e => setRegData({ ...regData, address: e.target.value })} />
                     </div>
                   </div>
-                  <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
+
+                  {/* Password */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('password')} <span className="text-red-400">*</span></label>
+                      <div className="relative group">
+                        <div className="absolute left-3 top-2.5 w-5 h-5 rounded bg-primary-50 flex items-center justify-center group-focus-within:bg-primary-100 transition-colors">
+                          <Lock className="w-3.5 h-3.5 text-primary-500" />
+                        </div>
+                        <input type="password" className="input-field pl-11 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500" placeholder="min 6 chars" value={regData.password}
+                          onChange={e => setRegData({ ...regData, password: e.target.value })} required minLength={6} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('confirmPassword')} <span className="text-red-400">*</span></label>
+                      <div className="relative group">
+                        <div className="absolute left-3 top-2.5 w-5 h-5 rounded bg-primary-50 flex items-center justify-center group-focus-within:bg-primary-100 transition-colors">
+                          <Lock className="w-3.5 h-3.5 text-primary-500" />
+                        </div>
+                        <input type="password" className="input-field pl-11 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500" placeholder="••••••" value={regData.confirmPassword}
+                          onChange={e => setRegData({ ...regData, confirmPassword: e.target.value })} required />
+                      </div>
+                    </div>
+                  </div>
+
+                  <button type="submit" disabled={loading} className="btn-primary w-full py-3 text-sm font-semibold shadow-lg shadow-primary-600/25 hover:shadow-primary-600/40 transition-all">
                     {loading ? t('loading') : t('createAccount')}
                   </button>
-                  <p className="text-center text-sm text-gray-600">
+                  <p className="text-center text-sm text-gray-500">
                     {t('alreadyHaveAccount')}{' '}
-                    <button type="button" onClick={() => setTab('login')} className="text-primary-600 font-medium hover:underline">
+                    <button type="button" onClick={() => setTab('login')} className="text-primary-600 font-semibold hover:underline">
                       {t('login')}
                     </button>
                   </p>
@@ -1004,6 +1106,7 @@ export default function AuthPage() {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }
