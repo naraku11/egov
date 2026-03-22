@@ -426,13 +426,9 @@ export default function AuthPage() {
     } catch (err) {
       console.error('Firebase SMS error:', err);
       clearRecaptcha();
-      // On rate limit or other Firebase errors, offer email fallback
-      if (err.code === 'auth/too-many-requests' || err.code === 'auth/captcha-check-failed' || err.code === 'auth/billing-not-enabled') {
-        toast.error('SMS unavailable. Sending to email instead...');
-        handleFallbackToEmail();
-      } else {
-        toast.error(err.message || 'Failed to send SMS');
-      }
+      // SMS failed — auto-fallback to email
+      toast.error('SMS unavailable. Sending to email instead...');
+      handleFallbackToEmail();
     } finally {
       setSendingSms(false);
     }
