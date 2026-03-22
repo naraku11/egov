@@ -714,8 +714,16 @@ export const verifyAuthOtp = async (req, res, next) => {
     if (!userId || !otp) return res.status(400).json({ error: 'userId and otp are required' });
 
     const stored = authOtpStore.get(userId);
-    if (!stored || stored.otp !== otp || Date.now() > stored.expiresAt) {
-      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    if (!stored) {
+      console.log(`❌ OTP verify failed: no entry for userId=${userId}. Store has ${authOtpStore.size} entries: [${[...authOtpStore.keys()].join(', ')}]`);
+      return res.status(400).json({ error: 'Verification session expired. Please try again.' });
+    }
+    if (Date.now() > stored.expiresAt) {
+      authOtpStore.delete(userId);
+      return res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
+    }
+    if (stored.otp !== otp) {
+      return res.status(400).json({ error: 'Incorrect OTP code. Please check and try again.' });
     }
 
     // Consume the OTP
