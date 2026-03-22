@@ -11,13 +11,14 @@ AI-powered citizen concern management system that matches residents with the app
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18 + Vite 5 + Tailwind CSS 3 |
+| Frontend | React 18 + Vite 5 + Tailwind CSS 3 + Recharts |
 | Backend | Node.js + Express 5 |
 | Database | MySQL 8 (Prisma ORM) |
 | AI | Anthropic Claude API (ticket classification) |
 | Auth | JWT + bcrypt + OTP (email & Firebase Phone Auth) |
 | Real-time | Socket.IO |
 | Email | Nodemailer (Hostinger SMTP) |
+| PDF Export | jsPDF + html2canvas (client-side report generation) |
 | Hosting | Hostinger (Node.js + MySQL) |
 
 ---
@@ -135,10 +136,17 @@ cd frontend && npm run build
 - Update availability (Available / Busy / Offline)
 
 ### Admin Flow
-- Admin panel with tabs: Overview, Tickets, Servants, Citizens, SLA Breaches, Announcements, Directory
+- Admin panel with tabs: Overview, Tickets, Servants, Citizens, Reports, SLA Breaches, Announcements, Directory
 - System stats with 7-day trend chart and department breakdown
 - Manage servants (create, edit, remove with department assignment)
 - Manage citizens (edit, archive, delete — blocked if citizen has tickets)
+- Archive/reactivate tickets (reactivation requires admin password)
+- Permanently delete tickets with cascade (messages, attachments, notifications)
+- **Analytics Reports** with period selector (1 Day, 15 Days, Annual)
+  - KPI cards: total, resolved, pending, resolution rate, avg resolution time, SLA compliance
+  - Daily trend chart (created vs resolved), status pie chart, priority & department bar charts
+  - Public servant performance table (assigned, resolved, rate, avg rating)
+  - **Export as detailed PDF** (multi-page A4 with all charts and tables)
 - Manage announcements (Info / Alert / Event categories, draft/published)
 - Manage barangay directory (officials, emergency services, offices)
 
@@ -217,7 +225,10 @@ The AI classifier uses Claude to analyze concern text in any of the three suppor
 | PUT | `/api/admin/users/:id` | Edit citizen (name, email, phone, barangay, password, isVerified) |
 | DELETE | `/api/admin/users/:id` | Delete citizen (blocked if has tickets) |
 | PATCH | `/api/admin/users/:id/archive` | Toggle citizen archive (isVerified) |
+| GET | `/api/admin/reports` | Analytics report (query: `range=1\|15\|365\|all`) |
 | GET | `/api/admin/sla-breaches` | Overdue tickets |
+| DELETE | `/api/admin/tickets/:id` | Permanently delete ticket (cascade) |
+| PATCH | `/api/admin/tickets/:id/archive` | Archive or reactivate ticket (reactivate requires password) |
 
 ### Other
 | Resource | Endpoints |
