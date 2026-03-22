@@ -441,7 +441,18 @@ export const addMessage = async (req, res, next) => {
     const { id } = req.params;
     const { message, isInternal = false } = req.body;
 
-    if (!message) return res.status(400).json({ error: 'Message is required' });
+    // Build attachments array from uploaded files
+    const files = req.files || [];
+    const attachments = files.map(f => ({
+      fileName: f.originalname,
+      filePath: `/uploads/tickets/${f.filename}`,
+      fileSize: f.size,
+      mimeType: f.mimetype,
+    }));
+
+    if (!message && attachments.length === 0) {
+      return res.status(400).json({ error: 'Message or attachment is required' });
+    }
 
     const ticket = await prisma.ticket.findUnique({ where: { id } });
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
@@ -456,7 +467,8 @@ export const addMessage = async (req, res, next) => {
         servantId: isServant ? req.servant.id : null,
         senderType: isServant ? 'SERVANT' : 'CLIENT',
         senderName,
-        message,
+        message: message || '',
+        attachments: attachments.length > 0 ? JSON.stringify(attachments) : null,
         // Residents cannot create internal notes regardless of what they send
         isInternal: isServant ? isInternal : false,
       },

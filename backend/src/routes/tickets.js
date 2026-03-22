@@ -137,7 +137,7 @@ router.patch('/:id/status', authenticate, requireServant, updateTicketStatus);
  * @param {string} id – CUID of the target ticket
  * @middleware authenticate
  */
-router.post('/:id/message', authenticate, addMessage);
+router.post('/:id/message', authenticate, upload.array('attachments', 5), addMessage);
 
 /**
  * PATCH /:id/assign

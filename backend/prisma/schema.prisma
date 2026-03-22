@@ -276,6 +276,7 @@ model TicketMessage {
 
   // Content
   message    String     @db.Text  // The full message body (supports long text)
+  attachments String?   @db.Text  // JSON array of file objects: [{ fileName, filePath, fileSize, mimeType }]
 
   // Visibility
   isInternal Boolean    @default(false)  // When true, the message is a private staff note hidden from the resident

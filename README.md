@@ -93,6 +93,7 @@ Import in order via phpMyAdmin:
 2. `sql/02-seed-admin.sql` — Admin account
 3. `sql/03-seed-servants.sql` — 11 government servants
 4. `sql/04-seed-citizens.sql` — 10 citizen accounts
+5. `sql/05-add-message-attachments.sql` — Message attachments column
 
 ### 4. Run
 
@@ -113,27 +114,31 @@ cd frontend && npm run build
 
 ### Citizen Flow
 - Trilingual interface (English / Filipino / Cebuano)
-- Register and login with email/phone + password + **OTP verification**
+- Register with email/phone + password + **OTP verification** (account not created until verified)
+- Login OTP: **SMS first** (Firebase) if phone provided, **email fallback** if SMS unavailable
+- Registration OTP: phone → Firebase SMS (primary), email → SMTP (fallback)
+- Auto-fallback to email if Firebase SMS fails (rate limit, billing, etc.)
 - Login with phone number via **Firebase Phone Auth** (SMS OTP)
 - Submit concerns via text, voice-to-text, or category selection with file attachments
 - AI classifier routes concerns to the correct department automatically
 - Real-time ticket tracking with status timeline
-- Chat with assigned servant (WhatsApp-style, live polling)
+- Chat with assigned servant with **file attachments** (images, PDFs, docs, videos — up to 5 per message)
 - Star ratings and comments on resolved tickets
 - Browse announcements and barangay directory
 - Edit profile with avatar photo upload
 
 ### Servant Flow
 - Dashboard with assigned tickets, priority indicators, and SLA deadlines
-- Reply to residents in ticket chat
-- Internal notes (visible only to servants)
+- Reply to residents in ticket chat with **file attachments**
+- Internal notes with file attachments (visible only to servants)
 - Escalate tickets, update status (in-progress / resolved)
 - Update availability (Available / Busy / Offline)
 
 ### Admin Flow
-- Admin panel with tabs: Overview, Tickets, Servants, SLA Breaches, Announcements, Directory
+- Admin panel with tabs: Overview, Tickets, Servants, Citizens, SLA Breaches, Announcements, Directory
 - System stats with 7-day trend chart and department breakdown
 - Manage servants (create, edit, remove with department assignment)
+- Manage citizens (edit, archive, delete — blocked if citizen has tickets)
 - Manage announcements (Info / Alert / Event categories, draft/published)
 - Manage barangay directory (officials, emergency services, offices)
 
@@ -141,14 +146,19 @@ cd frontend && npm run build
 
 ## Authentication
 
-| Role | Login Method | OTP Required |
+| Role | Login Method | OTP Channel |
 |------|-------------|-------------|
-| Citizen (CLIENT) | Email/phone + password | Yes (email + SMS) |
-| Citizen (CLIENT) | Firebase Phone Auth | No (Firebase handles verification) |
-| Servant | Email + password | No |
-| Admin | Email + password | No |
+| Citizen (CLIENT) | Email + password | Email OTP (SMTP) |
+| Citizen (CLIENT) | Phone + password | SMS OTP (Firebase), auto-fallback to email |
+| Citizen (CLIENT) | Firebase Phone Auth | Firebase handles verification (no separate OTP) |
+| Servant | Email + password | None (direct login) |
+| Admin | Email + password | None (direct login) |
 
-OTP is sent to **email** (via SMTP). Phone verification uses **Firebase Phone Auth** (SMS sent by Firebase, 10k free/month).
+**Registration:** Account is **not created** until OTP is verified. Pending data is held in memory for 5 minutes.
+
+**Email validation:** Registration checks email format, blocks disposable providers (mailinator, yopmail, etc.), and verifies domain MX records.
+
+**SMS fallback:** If Firebase SMS fails for any reason (rate limit, billing, captcha), the system automatically sends an email OTP instead. Users can also manually choose "Send to email instead".
 
 ---
 
@@ -174,11 +184,12 @@ The AI classifier uses Claude to analyze concern text in any of the three suppor
 ### Auth
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/auth/register` | Register (returns OTP for citizens) |
+| POST | `/api/auth/register` | Register (validates email, returns OTP — no DB record until verified) |
 | POST | `/api/auth/unified-login` | Login (returns OTP for citizens, JWT for admin/servants) |
-| POST | `/api/auth/verify-auth-otp` | Verify 6-digit OTP after login/register |
-| POST | `/api/auth/resend-otp` | Resend auth OTP |
-| POST | `/api/auth/firebase/verify-phone` | Verify Firebase Phone Auth token |
+| POST | `/api/auth/verify-auth-otp` | Verify 6-digit OTP (creates account for registration) |
+| POST | `/api/auth/resend-otp` | Resend auth OTP (supports `forceEmail` flag for SMS fallback) |
+| POST | `/api/auth/verify-phone-otp` | Verify Firebase Phone Auth token for SMS OTP flow |
+| POST | `/api/auth/firebase/verify-phone` | Verify Firebase Phone Auth token (passwordless login) |
 | POST | `/api/auth/forgot-password` | Request password reset code |
 | POST | `/api/auth/reset-password` | Reset password with code |
 | GET | `/api/auth/profile` | Get current profile |
@@ -189,11 +200,11 @@ The AI classifier uses Claude to analyze concern text in any of the three suppor
 |--------|----------|-------------|
 | POST | `/api/tickets` | Submit concern (multipart, up to 5 files) |
 | GET | `/api/tickets` | My tickets (paginated) |
-| GET | `/api/tickets/:id` | Ticket detail + messages |
+| GET | `/api/tickets/:id` | Ticket detail + messages + attachments |
 | POST | `/api/tickets/classify` | AI classify text |
 | GET | `/api/tickets/servant/assigned` | Servant's assigned tickets |
 | PATCH | `/api/tickets/:id/status` | Update status |
-| POST | `/api/tickets/:id/message` | Send message / internal note |
+| POST | `/api/tickets/:id/message` | Send message with optional file attachments (multipart, up to 5 files) |
 | PATCH | `/api/tickets/:id/escalate` | Escalate ticket |
 | POST | `/api/tickets/:id/feedback` | Submit rating |
 
@@ -202,6 +213,10 @@ The AI classifier uses Claude to analyze concern text in any of the three suppor
 |--------|----------|-------------|
 | GET | `/api/admin/stats` | Dashboard stats |
 | GET | `/api/admin/tickets` | All tickets (filterable) |
+| GET | `/api/admin/users` | All registered citizens (CLIENT role only) |
+| PUT | `/api/admin/users/:id` | Edit citizen (name, email, phone, barangay, password, isVerified) |
+| DELETE | `/api/admin/users/:id` | Delete citizen (blocked if has tickets) |
+| PATCH | `/api/admin/users/:id/archive` | Toggle citizen archive (isVerified) |
 | GET | `/api/admin/sla-breaches` | Overdue tickets |
 
 ### Other
@@ -234,7 +249,7 @@ egov/
 │   │   └── seed.js                # Seed data
 │   ├── src/
 │   │   ├── controllers/
-│   │   │   ├── authController.js  # Auth, OTP, Firebase, profile
+│   │   │   ├── authController.js  # Auth, OTP, Firebase, email validation
 │   │   │   └── ticketController.js
 │   │   ├── routes/                # Express routers
 │   │   ├── middleware/            # JWT, uploads, error handler
@@ -245,6 +260,7 @@ egov/
 │   │       ├── prisma.js         # Prisma client
 │   │       ├── socket.js         # Socket.IO
 │   │       └── firebase.js       # Firebase Admin SDK
+│   ├── firebase-service-account.json  # Firebase credentials (not in git)
 │   └── .env
 │
 ├── frontend/
@@ -263,7 +279,8 @@ egov/
     ├── 01-schema.sql
     ├── 02-seed-admin.sql
     ├── 03-seed-servants.sql
-    └── 04-seed-citizens.sql
+    ├── 04-seed-citizens.sql
+    └── 05-add-message-attachments.sql
 ```
 
 ---
@@ -272,11 +289,13 @@ egov/
 
 - JWT authentication (7-day expiry)
 - bcrypt password hashing (cost factor 10)
-- OTP verification for citizen accounts (email + phone)
+- OTP verification for citizen accounts (SMS primary, email fallback)
+- Email validation: format check, disposable domain blocking, MX record verification
+- Registration deferred until OTP verified (no unverified accounts in DB)
 - Rate limiting (200 req/15 min global, 20 req/15 min auth)
 - Helmet.js security headers
 - CORS with origin whitelist
-- File upload validation (type + size limits)
+- File upload validation (type + size limits, max 5 per message)
 - Role-based access control (CLIENT / SERVANT / ADMIN)
 
 ---
@@ -288,6 +307,7 @@ egov/
 - Safe-area inset support for notched phones
 - PWA installable from browser (Android + iOS)
 - Active touch states on all interactive elements
+- Split-panel auth page (branding panel on desktop, compact on mobile)
 
 ---
 

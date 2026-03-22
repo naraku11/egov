@@ -33,7 +33,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, Send, ArrowUpCircle, X } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, Send, ArrowUpCircle, X, Paperclip, FileText, Image as ImageIcon, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import api from '../api/client.js';
@@ -89,6 +89,9 @@ export default function ServantDashboard() {
 
   /** Current value of the message / internal-note input */
   const [message, setMessage] = useState('');
+  /** File attachments for the current message */
+  const [msgFiles, setMsgFiles] = useState([]);
+  const fileInputRef = useRef(null);
 
   /** When true the message will be saved as an internal note (hidden from resident) */
   const [isInternal, setIsInternal] = useState(false);
@@ -269,10 +272,17 @@ export default function ServantDashboard() {
    * new message appears immediately.
    */
   const sendMessage = async () => {
-    if (!message.trim()) return;
+    if (!message.trim() && msgFiles.length === 0) return;
     try {
-      await api.post(`/tickets/${selected.id}/message`, { message, isInternal });
+      const formData = new FormData();
+      formData.append('message', message);
+      formData.append('isInternal', isInternal);
+      msgFiles.forEach(f => formData.append('attachments', f));
+      await api.post(`/tickets/${selected.id}/message`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       setMessage('');
+      setMsgFiles([]);
       await loadTicket(selected.id);
     } catch (err) {
       toast.error('Failed to send');
@@ -553,7 +563,8 @@ export default function ServantDashboard() {
                                 <div className="max-w-[72%] flex flex-col items-end">
                                   <div className="px-4 py-2.5 text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl rounded-br-sm">
                                     <p className="text-xs font-semibold text-amber-600 mb-1">🔒 Internal Note</p>
-                                    {msg.message}
+                                    {msg.message && <p>{msg.message}</p>}
+                                    {(() => { const atts = msg.attachments ? JSON.parse(msg.attachments) : []; if (!atts.length) return null; const apiBase = api.defaults.baseURL?.replace('/api', '') || ''; return (<div className={`${msg.message ? 'mt-2 pt-2 border-t border-amber-200' : ''} space-y-1.5`}>{atts.map((att, idx) => { const fileUrl = `${apiBase}${att.filePath}`; return att.mimeType?.startsWith('image/') ? (<a key={idx} href={fileUrl} target="_blank" rel="noopener noreferrer" className="block"><img src={fileUrl} alt={att.fileName} className="max-w-[200px] rounded-lg mt-1" /></a>) : (<a key={idx} href={fileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-amber-700 hover:text-amber-900"><Download className="w-3.5 h-3.5" /><span className="underline truncate max-w-[150px]">{att.fileName}</span></a>); })}</div>); })()}
                                   </div>
                                   <p className="text-xs text-gray-400 mt-1 px-1">{format(new Date(msg.createdAt), 'h:mm a · MMM d')}</p>
                                 </div>
@@ -581,7 +592,31 @@ export default function ServantDashboard() {
                                     ? 'bg-indigo-600 text-white rounded-2xl rounded-br-sm'
                                     : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-bl-sm shadow-sm'
                                 }`}>
-                                  {msg.message}
+                                  {msg.message && <p>{msg.message}</p>}
+                                  {(() => {
+                                    const atts = msg.attachments ? JSON.parse(msg.attachments) : [];
+                                    if (!atts.length) return null;
+                                    const apiBase = api.defaults.baseURL?.replace('/api', '') || '';
+                                    return (
+                                      <div className={`${msg.message ? 'mt-2 pt-2 border-t' : ''} ${isMe ? 'border-white/20' : 'border-gray-100'} space-y-1.5`}>
+                                        {atts.map((att, idx) => {
+                                          const fileUrl = `${apiBase}${att.filePath}`;
+                                          return att.mimeType?.startsWith('image/') ? (
+                                            <a key={idx} href={fileUrl} target="_blank" rel="noopener noreferrer" className="block">
+                                              <img src={fileUrl} alt={att.fileName} className="max-w-[200px] rounded-lg mt-1" />
+                                            </a>
+                                          ) : (
+                                            <a key={idx} href={fileUrl} target="_blank" rel="noopener noreferrer"
+                                              className={`flex items-center gap-2 text-xs ${isMe ? 'text-white/90 hover:text-white' : 'text-primary-600 hover:text-primary-700'}`}>
+                                              <Download className="w-3.5 h-3.5 flex-shrink-0" />
+                                              <span className="underline truncate max-w-[150px]">{att.fileName}</span>
+                                              <span className="opacity-60">({(att.fileSize / 1024).toFixed(0)} KB)</span>
+                                            </a>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                                 <p className="text-xs text-gray-400 mt-1 px-1">{format(new Date(msg.createdAt), 'h:mm a · MMM d')}</p>
                               </div>
@@ -652,8 +687,42 @@ export default function ServantDashboard() {
                           <span className="text-xs text-gray-600">Internal note only</span>
                         </label>
                       </div>
-                      {/* Text input + send button; Enter key also triggers sendMessage() */}
-                      <div className="flex gap-2">
+                      {/* File preview strip */}
+                      {msgFiles.length > 0 && (
+                        <div className="flex gap-2 flex-wrap">
+                          {msgFiles.map((f, i) => (
+                            <div key={i} className="flex items-center gap-1.5 bg-gray-100 rounded-lg px-2.5 py-1.5 text-xs text-gray-600">
+                              {f.type.startsWith('image/') ? <ImageIcon className="w-3.5 h-3.5 text-blue-500" /> : <FileText className="w-3.5 h-3.5 text-orange-500" />}
+                              <span className="max-w-[120px] truncate">{f.name}</span>
+                              <button type="button" onClick={() => setMsgFiles(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Text input + attach + send button */}
+                      <div className="flex gap-2 items-center">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors flex-shrink-0"
+                          title="Attach file"
+                        >
+                          <Paperclip className="w-4 h-4" />
+                        </button>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          accept="image/*,.pdf,.doc,.docx,.mp4,.mov"
+                          className="hidden"
+                          onChange={e => {
+                            const newFiles = Array.from(e.target.files || []);
+                            setMsgFiles(prev => [...prev, ...newFiles].slice(0, 5));
+                            e.target.value = '';
+                          }}
+                        />
                         <input
                           type="text"
                           className="input-field flex-1 text-sm"
@@ -662,7 +731,7 @@ export default function ServantDashboard() {
                           onChange={e => setMessage(e.target.value)}
                           onKeyDown={e => e.key === 'Enter' && sendMessage()}
                         />
-                        <button onClick={sendMessage} disabled={!message.trim()} className="btn-primary px-3 py-2 flex-shrink-0">
+                        <button onClick={sendMessage} disabled={!message.trim() && msgFiles.length === 0} className="btn-primary px-3 py-2 flex-shrink-0">
                           <Send className="w-4 h-4" />
                         </button>
                       </div>

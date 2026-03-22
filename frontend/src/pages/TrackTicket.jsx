@@ -23,7 +23,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Search, Send, Star, ArrowLeft, Paperclip, Clock, CheckCircle, AlertCircle, XCircle, MessageSquare } from 'lucide-react';
+import { Search, Send, Star, ArrowLeft, Paperclip, Clock, CheckCircle, AlertCircle, XCircle, MessageSquare, X, FileText, Image as ImageIcon, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import api from '../api/client.js';
@@ -80,6 +80,10 @@ export default function TrackTicket() {
   // Feedback star rating (1–5) and optional comment
   const [rating, setRating]                 = useState(0);
   const [feedbackComment, setFeedbackComment] = useState('');
+
+  // File attachments for messages
+  const [msgFiles, setMsgFiles]             = useState([]);
+  const fileInputRef                        = useRef(null);
 
   // Loading flags
   const [loading, setLoading]               = useState(true);
@@ -183,12 +187,17 @@ export default function TrackTicket() {
    * refreshes the ticket to include the saved message.
    */
   const sendMessage = async () => {
-    if (!message.trim()) return;
+    if (!message.trim() && msgFiles.length === 0) return;
     setSendingMsg(true);
     try {
-      await api.post(`/tickets/${selectedTicket.id}/message`, { message });
+      const formData = new FormData();
+      formData.append('message', message);
+      msgFiles.forEach(f => formData.append('attachments', f));
+      await api.post(`/tickets/${selectedTicket.id}/message`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       setMessage('');
-      // Reload so the sent message appears with its server-assigned metadata
+      setMsgFiles([]);
       await loadTicket(selectedTicket.id);
     } catch {
       toast.error('Failed to send message');
@@ -427,7 +436,33 @@ export default function TrackTicket() {
                                 ? 'bg-primary-600 text-white rounded-2xl rounded-br-sm'
                                 : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-bl-sm shadow-sm'
                             }`}>
-                              {msg.message}
+                              {msg.message && <p>{msg.message}</p>}
+                              {/* Render file attachments */}
+                              {(() => {
+                                const atts = msg.attachments ? JSON.parse(msg.attachments) : [];
+                                if (atts.length === 0) return null;
+                                return (
+                                  <div className={`${msg.message ? 'mt-2 pt-2 border-t' : ''} ${isMe ? 'border-white/20' : 'border-gray-100'} space-y-1.5`}>
+                                    {atts.map((att, idx) => {
+                                      const isImage = att.mimeType?.startsWith('image/');
+                                      const apiBase = api.defaults.baseURL?.replace('/api', '') || '';
+                                      const fileUrl = `${apiBase}${att.filePath}`;
+                                      return isImage ? (
+                                        <a key={idx} href={fileUrl} target="_blank" rel="noopener noreferrer" className="block">
+                                          <img src={fileUrl} alt={att.fileName} className="max-w-[200px] rounded-lg mt-1" />
+                                        </a>
+                                      ) : (
+                                        <a key={idx} href={fileUrl} target="_blank" rel="noopener noreferrer"
+                                          className={`flex items-center gap-2 text-xs ${isMe ? 'text-white/90 hover:text-white' : 'text-primary-600 hover:text-primary-700'}`}>
+                                          <Download className="w-3.5 h-3.5 flex-shrink-0" />
+                                          <span className="underline truncate max-w-[150px]">{att.fileName}</span>
+                                          <span className="opacity-60">({(att.fileSize / 1024).toFixed(0)} KB)</span>
+                                        </a>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
                             </div>
                             <p className={`text-xs mt-1 px-1 ${isMe ? 'text-gray-400' : 'text-gray-400'}`}>
                               {format(new Date(msg.createdAt), 'h:mm a · MMM d')}
@@ -483,13 +518,48 @@ export default function TrackTicket() {
 
                 {/* ── Message input bar — hidden for resolved/closed tickets ── */}
                 {!['RESOLVED', 'CLOSED'].includes(selectedTicket.status) && (
-                  <div className="flex-shrink-0 px-4 py-3 border-t border-gray-100 bg-white">
+                  <div className="flex-shrink-0 px-4 py-3 border-t border-gray-100 bg-white space-y-2">
+                    {/* File preview strip */}
+                    {msgFiles.length > 0 && (
+                      <div className="flex gap-2 flex-wrap">
+                        {msgFiles.map((f, i) => (
+                          <div key={i} className="flex items-center gap-1.5 bg-gray-100 rounded-lg px-2.5 py-1.5 text-xs text-gray-600">
+                            {f.type.startsWith('image/') ? <ImageIcon className="w-3.5 h-3.5 text-blue-500" /> : <FileText className="w-3.5 h-3.5 text-orange-500" />}
+                            <span className="max-w-[120px] truncate">{f.name}</span>
+                            <button type="button" onClick={() => setMsgFiles(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex gap-2 items-center">
                       {/* Citizen avatar */}
                       <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold flex-shrink-0 select-none">
                         {userInitial}
                       </div>
-                      {/* Message text input; Enter sends (Shift+Enter is a newline) */}
+                      {/* Attach file button */}
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors flex-shrink-0"
+                        title="Attach file"
+                      >
+                        <Paperclip className="w-4 h-4" />
+                      </button>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept="image/*,.pdf,.doc,.docx,.mp4,.mov"
+                        className="hidden"
+                        onChange={e => {
+                          const newFiles = Array.from(e.target.files || []);
+                          setMsgFiles(prev => [...prev, ...newFiles].slice(0, 5));
+                          e.target.value = '';
+                        }}
+                      />
+                      {/* Message text input */}
                       <input
                         type="text"
                         className="input-field flex-1 text-sm"
@@ -498,10 +568,10 @@ export default function TrackTicket() {
                         onChange={e => setMessage(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
                       />
-                      {/* Send button — disabled while awaiting API response */}
+                      {/* Send button */}
                       <button
                         onClick={sendMessage}
-                        disabled={sendingMsg || !message.trim()}
+                        disabled={sendingMsg || (!message.trim() && msgFiles.length === 0)}
                         className="btn-primary px-3.5 py-2.5 flex-shrink-0 disabled:opacity-50"
                       >
                         {sendingMsg
