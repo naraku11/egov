@@ -64,7 +64,10 @@ const PRIORITY_COLORS = {
 /** Date-range options exposed to the user via the range selector. */
 const RANGE_OPTIONS = [
   { label: '1 Day',   value: 1   },
+  { label: '7 Days',  value: 7   },
   { label: '15 Days', value: 15  },
+  { label: '30 Days', value: 30  },
+  { label: '90 Days', value: 90  },
   { label: 'Annual',  value: 365 },
 ];
 

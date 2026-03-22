@@ -147,7 +147,7 @@ cd frontend && npm run build
 
 ### Reports (Admin — Navbar)
 - Standalone analytics page accessible from the admin navbar (`/reports`)
-- Period selector: **1 Day**, **15 Days**, **Annual**
+- Period selector: **1 Day**, **7 Days**, **15 Days**, **30 Days**, **90 Days**, **Annual**
 - KPI summary: total tickets, resolved, pending, escalated, SLA compliance %, avg resolution time
 - Ticket trend dual-line chart (created vs resolved per day)
 - Status distribution donut chart, priority bar chart, department horizontal bar chart
