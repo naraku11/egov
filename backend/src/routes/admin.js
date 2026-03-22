@@ -221,7 +221,7 @@ router.get('/users', authenticate, requireAdmin, async (req, res, next) => {
  */
 router.get('/reports', authenticate, requireAdmin, async (req, res, next) => {
   try {
-    const { range = '30' } = req.query; // '7' | '30' | '90' | 'all'
+    const { range = '30' } = req.query; // '1' | '15' | '30' | '90' | '365' | 'all'
     // Compute the start-of-range date; null means no lower bound (all time)
     const since = range === 'all' ? null : new Date(Date.now() - parseInt(range) * 24 * 60 * 60 * 1000);
     const dateFilter = since ? { createdAt: { gte: since } } : {};
@@ -502,6 +502,67 @@ router.patch('/users/:id/archive', authenticate, requireAdmin, async (req, res, 
     });
     const { password: _, ...result } = updated;
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /admin/tickets/:id
+// ---------------------------------------------------------------------------
+/**
+ * Permanently deletes a ticket and all related data (messages, attachments,
+ * notifications, feedback). Uses Prisma's cascade delete.
+ *
+ * @name DELETE /admin/tickets/:id
+ * @access Admin
+ */
+router.delete('/tickets/:id', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const ticket = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+    await prisma.ticket.delete({ where: { id } });
+    res.json({ message: 'Ticket deleted successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /admin/tickets/:id/archive
+// ---------------------------------------------------------------------------
+/**
+ * Archives a ticket by setting its status to CLOSED, or unarchives by
+ * restoring it to PENDING. Toggling behaviour.
+ *
+ * @name PATCH /admin/tickets/:id/archive
+ * @access Admin
+ */
+router.patch('/tickets/:id/archive', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+    const ticket = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+    const isArchived = ticket.status === 'CLOSED';
+
+    // Unarchiving requires admin password confirmation
+    if (isArchived) {
+      if (!password) return res.status(400).json({ error: 'Admin password is required to reactivate a ticket' });
+      const admin = await prisma.user.findUnique({ where: { id: req.user.id } });
+      const valid = await bcrypt.compare(password, admin.password);
+      if (!valid) return res.status(401).json({ error: 'Incorrect admin password' });
+    }
+
+    const newStatus = isArchived ? 'PENDING' : 'CLOSED';
+    const updated = await prisma.ticket.update({
+      where: { id },
+      data: { status: newStatus },
+    });
+    res.json({ message: `Ticket ${newStatus === 'CLOSED' ? 'archived' : 'reactivated'}`, ticket: updated });
   } catch (err) {
     next(err);
   }

@@ -29,7 +29,8 @@ import {
   Users, FileText, CheckCircle, AlertTriangle, Star, TrendingUp,
   Building2, UserPlus, RefreshCw, X, Search, Filter, Clock,
   ShieldCheck, Activity, ChevronRight, Pencil, Trash2, Camera,
-  Archive, MapPin, Phone, Mail, UserX,
+  Archive, MapPin, Phone, Mail, UserX, Download, BarChart3, Calendar,
+  Target, Timer, Award, Percent,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
@@ -484,7 +485,14 @@ const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'
 const STATUS_OPTIONS = ['ALL', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'ESCALATED'];
 
 /** Navigation tabs for the dashboard; order determines left-to-right display */
-const TABS = ['overview', 'tickets', 'servants', 'citizens', 'sla'];
+const TABS = ['overview', 'tickets', 'servants', 'citizens', 'reports', 'sla'];
+
+/** Report period options */
+const REPORT_PERIODS = [
+  { label: '1 Day',   value: '1',   days: 1 },
+  { label: '15 Days', value: '15',  days: 15 },
+  { label: 'Annual',  value: '365', days: 365 },
+];
 
 /**
  * AdminDashboard component.
@@ -542,6 +550,34 @@ export default function AdminDashboard() {
   /** Search query for the citizens tab */
   const [citizenSearch, setCitizenSearch] = useState('');
 
+  /** Ticket staged for deletion, or null */
+  const [deletingTicket, setDeletingTicket] = useState(null);
+
+  /** Archived tickets list */
+  const [archivedTickets, setArchivedTickets] = useState([]);
+  /** Search query for archived tab */
+  const [archivedSearch, setArchivedSearch] = useState('');
+  /** Sub-tab within tickets: 'active' or 'archived' */
+  const [ticketSubTab, setTicketSubTab] = useState('active');
+  /** Ticket staged for reactivation (requires password) */
+  const [reactivatingTicket, setReactivatingTicket] = useState(null);
+  /** Admin password for reactivation */
+  const [reactivatePassword, setReactivatePassword] = useState('');
+  /** Loading state for reactivation */
+  const [reactivateLoading, setReactivateLoading] = useState(false);
+
+  // ── Reports state ──────────────────────────────────────────────────────────
+  /** Selected report period: '1' | '15' | '365' */
+  const [reportPeriod, setReportPeriod] = useState('15');
+  /** Report data returned from GET /admin/reports */
+  const [reportData, setReportData] = useState(null);
+  /** True while report data is loading */
+  const [reportLoading, setReportLoading] = useState(false);
+  /** True while PDF export is generating */
+  const [exporting, setExporting] = useState(false);
+  /** Ref for the printable report area */
+  const reportRef = useRef(null);
+
   // ── Refresh state ───────────────────────────────────────────────────────────
   /** True while a manual refresh is in flight (shows spinner on the Refresh button) */
   const [refreshing, setRefreshing] = useState(false);
@@ -591,15 +627,25 @@ export default function AdminDashboard() {
    */
   const fetchTabData = async (targetTab) => {
     try {
-      if (targetTab === 'tickets') {
-        const { data } = await api.get('/admin/tickets?limit=50');
-        setTickets(data.tickets || []);
+      if (targetTab === 'tickets' || targetTab === 'archived') {
+        const { data } = await api.get('/admin/tickets?limit=200');
+        const all = data.tickets || [];
+        setTickets(all.filter(t => t.status !== 'CLOSED'));
+        setArchivedTickets(all.filter(t => t.status === 'CLOSED'));
       } else if (targetTab === 'servants') {
         const { data } = await api.get('/servants');
         setServants(data || []);
       } else if (targetTab === 'citizens') {
         const { data } = await api.get('/admin/users');
         setCitizens(data || []);
+      } else if (targetTab === 'reports') {
+        setReportLoading(true);
+        try {
+          const { data } = await api.get(`/admin/reports?range=${reportPeriod}`);
+          setReportData(data);
+        } finally {
+          setReportLoading(false);
+        }
       } else if (targetTab === 'sla') {
         const { data } = await api.get('/admin/sla-breaches');
         setSlaBreaches(data || []);
@@ -691,6 +737,131 @@ export default function AdminDashboard() {
       fetchTabData('citizens');
     } catch (err) {
       toast.error(err.response?.data?.error || err.message);
+    }
+  };
+
+  const handleArchiveTicket = async (ticket) => {
+    try {
+      await api.patch(`/admin/tickets/${ticket.id}/archive`);
+      toast.success(`Ticket #${ticket.ticketNumber} archived`);
+      fetchTabData('tickets');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    }
+  };
+
+  const handleReactivateTicket = async () => {
+    if (!reactivatingTicket) return;
+    setReactivateLoading(true);
+    try {
+      await api.patch(`/admin/tickets/${reactivatingTicket.id}/archive`, { password: reactivatePassword });
+      toast.success(`Ticket #${reactivatingTicket.ticketNumber} reactivated`);
+      setReactivatingTicket(null);
+      setReactivatePassword('');
+      fetchTabData('archived');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to reactivate');
+    } finally {
+      setReactivateLoading(false);
+    }
+  };
+
+  const handleDeleteTicket = async () => {
+    if (!deletingTicket) return;
+    try {
+      await api.delete(`/admin/tickets/${deletingTicket.id}`);
+      toast.success(`Ticket #${deletingTicket.ticketNumber} deleted`);
+      setDeletingTicket(null);
+      fetchTabData('tickets');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    }
+  };
+
+  // ── Report helpers ──────────────────────────────────────────────────────────
+
+  /** Fetch report when period changes */
+  const fetchReport = async (period) => {
+    setReportPeriod(period);
+    setReportLoading(true);
+    try {
+      const { data } = await api.get(`/admin/reports?range=${period}`);
+      setReportData(data);
+    } catch {
+      toast.error('Failed to load report');
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  /** Export the report section as a detailed PDF */
+  const exportReportPDF = async () => {
+    if (!reportRef.current) return;
+    setExporting(true);
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const { jsPDF } = await import('jspdf');
+
+      const el = reportRef.current;
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const imgW = canvas.width;
+      const imgH = canvas.height;
+
+      // A4 dimensions in mm
+      const pdfW = 210;
+      const pdfH = 297;
+      const margin = 10;
+      const contentW = pdfW - margin * 2;
+      const ratio = contentW / imgW;
+      const scaledH = imgH * ratio;
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+
+      // If content fits in one page
+      if (scaledH <= pdfH - margin * 2) {
+        pdf.addImage(imgData, 'PNG', margin, margin, contentW, scaledH);
+      } else {
+        // Multi-page: slice the canvas into page-sized chunks
+        const pageContentH = pdfH - margin * 2;
+        const sliceH = pageContentH / ratio; // height in canvas pixels per page
+        let yOffset = 0;
+        let page = 0;
+
+        while (yOffset < imgH) {
+          if (page > 0) pdf.addPage();
+          const remaining = Math.min(sliceH, imgH - yOffset);
+
+          // Create a slice canvas for this page
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = imgW;
+          sliceCanvas.height = remaining;
+          const ctx = sliceCanvas.getContext('2d');
+          ctx.drawImage(canvas, 0, -yOffset);
+
+          const sliceImg = sliceCanvas.toDataURL('image/png');
+          const sliceScaledH = remaining * ratio;
+          pdf.addImage(sliceImg, 'PNG', margin, margin, contentW, sliceScaledH);
+
+          yOffset += sliceH;
+          page++;
+        }
+      }
+
+      const periodLabel = REPORT_PERIODS.find(p => p.value === reportPeriod)?.label || reportPeriod;
+      pdf.save(`EGov_Report_${periodLabel.replace(/\s/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+      toast.success('Report exported successfully');
+    } catch (err) {
+      console.error('PDF export error:', err);
+      toast.error('Failed to export PDF');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -790,7 +961,7 @@ export default function AdminDashboard() {
                 tab === t ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              {t === 'sla' ? 'SLA Breaches' : t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'sla' ? 'SLA Breaches' : t === 'reports' ? 'Reports' : t.charAt(0).toUpperCase() + t.slice(1)}
               {/* Red badge on SLA tab when breaches exist */}
               {t === 'sla' && stats.slaBreaches > 0 && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
@@ -941,73 +1112,196 @@ export default function AdminDashboard() {
         ────────────────────────────────────────────────────────────────────── */}
         {tab === 'tickets' && (
           <div className="card animate-fadeIn">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
-              <h3 className="font-semibold text-gray-900 flex-1">All Tickets</h3>
-              {/* Free-text search: matches ticket number, title, or resident name */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search ticket, title, resident..."
-                  value={ticketSearch}
-                  onChange={e => setTicketSearch(e.target.value)}
-                  className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-64"
-                />
-              </div>
-              {/* Status dropdown filter */}
-              <div className="relative">
-                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <select
-                  value={ticketStatusFilter}
-                  onChange={e => setTicketStatusFilter(e.target.value)}
-                  className="pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 appearance-none bg-white"
-                >
-                  {STATUS_OPTIONS.map(s => (
-                    <option key={s} value={s}>{s === 'ALL' ? 'All Statuses' : s.replace('_', ' ')}</option>
-                  ))}
-                </select>
-              </div>
-              {/* Result count indicator */}
-              <span className="text-xs text-gray-400 whitespace-nowrap">{filteredTickets.length} result{filteredTickets.length !== 1 ? 's' : ''}</span>
+            {/* Sub-tab switcher: Active / Archived */}
+            <div className="flex items-center gap-4 mb-5 border-b border-gray-100 pb-3">
+              <button
+                onClick={() => setTicketSubTab('active')}
+                className={`text-sm font-medium pb-2 border-b-2 transition-colors ${
+                  ticketSubTab === 'active' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'
+                }`}
+              >
+                Active Tickets
+                <span className="ml-1.5 text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{tickets.length}</span>
+              </button>
+              <button
+                onClick={() => setTicketSubTab('archived')}
+                className={`text-sm font-medium pb-2 border-b-2 transition-colors ${
+                  ticketSubTab === 'archived' ? 'text-amber-600 border-amber-600' : 'text-gray-400 border-transparent hover:text-gray-600'
+                }`}
+              >
+                Archived
+                {archivedTickets.length > 0 && (
+                  <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{archivedTickets.length}</span>
+                )}
+              </button>
             </div>
 
-            {/* Tickets data table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    {['Ticket #', 'Title', 'Resident', 'Barangay', 'Department', 'Assigned To', 'Status', 'Priority', 'Date'].map(h => (
-                      <th key={h} className="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredTickets.map(ticket => (
-                    <tr key={ticket.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                      <td className="py-3 px-3 font-mono text-xs text-gray-600">{ticket.ticketNumber}</td>
-                      <td className="py-3 px-3 font-medium text-gray-900 max-w-[180px] truncate">{ticket.title}</td>
-                      <td className="py-3 px-3 text-gray-600">{ticket.user?.name}</td>
-                      <td className="py-3 px-3 text-gray-500 text-xs">{ticket.user?.barangay}</td>
-                      <td className="py-3 px-3">
-                        <span className="flex items-center gap-1.5 text-xs">
-                          {/* Department colour dot for quick visual scanning */}
-                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ticket.department?.color }} />
-                          {ticket.department?.name}
-                        </span>
-                      </td>
-                      {/* Em dash shown when no servant has been assigned yet */}
-                      <td className="py-3 px-3 text-gray-500 text-xs">{ticket.servant?.name || '—'}</td>
-                      <td className="py-3 px-3"><StatusBadge status={ticket.status} /></td>
-                      <td className="py-3 px-3"><PriorityBadge priority={ticket.priority} /></td>
-                      <td className="py-3 px-3 text-gray-400 text-xs">{format(new Date(ticket.createdAt), 'MMM d, yyyy')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {filteredTickets.length === 0 && (
-                <p className="text-center text-gray-400 py-10 text-sm">No tickets match your filters</p>
-              )}
-            </div>
+            {/* ── Active tickets sub-tab ──────────────────────────── */}
+            {ticketSubTab === 'active' && (
+              <>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
+                  <h3 className="font-semibold text-gray-900 flex-1">All Tickets</h3>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search ticket, title, resident..."
+                      value={ticketSearch}
+                      onChange={e => setTicketSearch(e.target.value)}
+                      className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-64"
+                    />
+                  </div>
+                  <div className="relative">
+                    <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <select
+                      value={ticketStatusFilter}
+                      onChange={e => setTicketStatusFilter(e.target.value)}
+                      className="pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 appearance-none bg-white"
+                    >
+                      {STATUS_OPTIONS.map(s => (
+                        <option key={s} value={s}>{s === 'ALL' ? 'All Statuses' : s.replace('_', ' ')}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">{filteredTickets.length} result{filteredTickets.length !== 1 ? 's' : ''}</span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        {['Ticket #', 'Title', 'Resident', 'Barangay', 'Department', 'Assigned To', 'Status', 'Priority', 'Date', 'Actions'].map(h => (
+                          <th key={h} className="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredTickets.map(ticket => (
+                        <tr key={ticket.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                          <td className="py-3 px-3 font-mono text-xs text-gray-600">{ticket.ticketNumber}</td>
+                          <td className="py-3 px-3 font-medium text-gray-900 max-w-[180px] truncate">{ticket.title}</td>
+                          <td className="py-3 px-3 text-gray-600">{ticket.user?.name}</td>
+                          <td className="py-3 px-3 text-gray-500 text-xs">{ticket.user?.barangay}</td>
+                          <td className="py-3 px-3">
+                            <span className="flex items-center gap-1.5 text-xs">
+                              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ticket.department?.color }} />
+                              {ticket.department?.name}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-gray-500 text-xs">{ticket.servant?.name || '—'}</td>
+                          <td className="py-3 px-3"><StatusBadge status={ticket.status} /></td>
+                          <td className="py-3 px-3"><PriorityBadge priority={ticket.priority} /></td>
+                          <td className="py-3 px-3 text-gray-400 text-xs">{format(new Date(ticket.createdAt), 'MMM d, yyyy')}</td>
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleArchiveTicket(ticket)}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                                title="Archive"
+                              >
+                                <Archive className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setDeletingTicket(ticket)}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {filteredTickets.length === 0 && (
+                    <p className="text-center text-gray-400 py-10 text-sm">No tickets match your filters</p>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* ── Archived tickets sub-tab ────────────────────────── */}
+            {ticketSubTab === 'archived' && (
+              <>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
+                  <h3 className="font-semibold text-gray-900 flex-1">Archived Tickets</h3>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search archived tickets..."
+                      value={archivedSearch}
+                      onChange={e => setArchivedSearch(e.target.value)}
+                      className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-64"
+                    />
+                  </div>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">
+                    {archivedTickets.filter(t => {
+                      if (!archivedSearch) return true;
+                      const q = archivedSearch.toLowerCase();
+                      return t.ticketNumber?.toLowerCase().includes(q) || t.title?.toLowerCase().includes(q) || t.user?.name?.toLowerCase().includes(q);
+                    }).length} archived
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        {['Ticket #', 'Title', 'Resident', 'Department', 'Priority', 'Archived Date', 'Actions'].map(h => (
+                          <th key={h} className="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {archivedTickets
+                        .filter(t => {
+                          if (!archivedSearch) return true;
+                          const q = archivedSearch.toLowerCase();
+                          return t.ticketNumber?.toLowerCase().includes(q) || t.title?.toLowerCase().includes(q) || t.user?.name?.toLowerCase().includes(q);
+                        })
+                        .map(ticket => (
+                        <tr key={ticket.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                          <td className="py-3 px-3 font-mono text-xs text-gray-600">{ticket.ticketNumber}</td>
+                          <td className="py-3 px-3 font-medium text-gray-900 max-w-[200px] truncate">{ticket.title}</td>
+                          <td className="py-3 px-3 text-gray-600">{ticket.user?.name}</td>
+                          <td className="py-3 px-3">
+                            <span className="flex items-center gap-1.5 text-xs">
+                              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ticket.department?.color }} />
+                              {ticket.department?.name}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3"><PriorityBadge priority={ticket.priority} /></td>
+                          <td className="py-3 px-3 text-gray-400 text-xs">{format(new Date(ticket.updatedAt || ticket.createdAt), 'MMM d, yyyy')}</td>
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => { setReactivatingTicket(ticket); setReactivatePassword(''); }}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 transition-colors"
+                                title="Reactivate"
+                              >
+                                Reactivate
+                              </button>
+                              <button
+                                onClick={() => setDeletingTicket(ticket)}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                title="Delete permanently"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {archivedTickets.length === 0 && (
+                    <p className="text-center text-gray-400 py-10 text-sm">No archived tickets</p>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -1275,6 +1569,279 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* ── REPORTS TAB ─────────────────────────────────────────────────────
+            Detailed analytics with period selector (1 day, 15 days, annual)
+            and PDF export.
+        ────────────────────────────────────────────────────────────────────── */}
+        {tab === 'reports' && (
+          <div className="space-y-6 animate-fadeIn">
+            {/* Period selector + export button */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-primary-600" />
+                <h3 className="font-semibold text-gray-900">Analytics Report</h3>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex bg-gray-100 p-1 rounded-lg">
+                  {REPORT_PERIODS.map(p => (
+                    <button
+                      key={p.value}
+                      onClick={() => fetchReport(p.value)}
+                      className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                        reportPeriod === p.value
+                          ? 'bg-white shadow-sm text-primary-700'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={exportReportPDF}
+                  disabled={!reportData || exporting}
+                  className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50"
+                >
+                  <Download className="w-4 h-4" />
+                  {exporting ? 'Exporting...' : 'Export PDF'}
+                </button>
+              </div>
+            </div>
+
+            {reportLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
+              </div>
+            ) : !reportData ? (
+              <div className="card text-center py-16 text-gray-400">
+                <BarChart3 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p className="font-medium">Select a period to generate report</p>
+              </div>
+            ) : (
+              /* ── Report content (captured by reportRef for PDF export) ── */
+              <div ref={reportRef} className="space-y-6 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                {/* Report header */}
+                <div className="border-b border-gray-100 pb-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-900">Municipality of Aluguinsan — E-Gov Report</h2>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Period: <span className="font-medium text-gray-700">{REPORT_PERIODS.find(p => p.value === reportPeriod)?.label}</span>
+                        {' · '}Generated: {format(new Date(), 'MMMM d, yyyy h:mm a')}
+                      </p>
+                    </div>
+                    <div className="hidden sm:flex items-center gap-2 bg-primary-50 text-primary-700 px-3 py-1.5 rounded-lg text-sm font-medium">
+                      <ShieldCheck className="w-4 h-4" />
+                      Official Report
+                    </div>
+                  </div>
+                </div>
+
+                {/* KPI cards row */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  {[
+                    { label: 'Total Tickets', value: reportData.total, icon: FileText, color: 'text-blue-600 bg-blue-50', border: 'border-blue-200' },
+                    { label: 'Resolved', value: reportData.resolved, icon: CheckCircle, color: 'text-green-600 bg-green-50', border: 'border-green-200' },
+                    { label: 'Pending', value: reportData.pending, icon: Clock, color: 'text-yellow-600 bg-yellow-50', border: 'border-yellow-200' },
+                    { label: 'Resolution Rate', value: `${reportData.resolutionRate}%`, icon: Percent, color: 'text-indigo-600 bg-indigo-50', border: 'border-indigo-200' },
+                    { label: 'Avg. Resolution', value: reportData.avgResolutionHours ? `${reportData.avgResolutionHours.toFixed(1)}h` : 'N/A', icon: Timer, color: 'text-purple-600 bg-purple-50', border: 'border-purple-200' },
+                    { label: 'SLA Compliance', value: reportData.slaCompliance != null ? `${reportData.slaCompliance}%` : 'N/A', icon: Target, color: 'text-emerald-600 bg-emerald-50', border: 'border-emerald-200' },
+                  ].map(({ label, value, icon: Icon, color, border }) => (
+                    <div key={label} className={`rounded-xl border ${border} p-3`}>
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${color}`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <p className="text-lg font-bold text-gray-900">{value}</p>
+                      <p className="text-xs text-gray-500">{label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Ticket counts summary bar */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  {[
+                    { label: 'In Progress', value: reportData.inProgress, bg: 'bg-blue-500' },
+                    { label: 'Escalated', value: reportData.escalated, bg: 'bg-orange-500' },
+                    { label: 'Resolved', value: reportData.resolved, bg: 'bg-green-500' },
+                    { label: 'Pending', value: reportData.pending, bg: 'bg-yellow-500' },
+                    { label: 'Total', value: reportData.total, bg: 'bg-gray-700' },
+                  ].map(({ label, value, bg }) => (
+                    <div key={label} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
+                      <div className={`w-3 h-3 rounded-full ${bg}`} />
+                      <div>
+                        <p className="text-xs text-gray-500">{label}</p>
+                        <p className="text-sm font-bold text-gray-900">{value}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Charts: Trend + Status + Priority */}
+                <div className="grid lg:grid-cols-2 gap-6">
+                  {/* Daily trend chart */}
+                  <div className="border border-gray-100 rounded-xl p-4">
+                    <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2 text-sm">
+                      <Activity className="w-4 h-4 text-primary-600" />
+                      Daily Ticket Trend
+                    </h4>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <LineChart data={reportData.trend}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => format(new Date(d + 'T00:00:00'), 'MMM d')} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <Tooltip
+                          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '12px' }}
+                          labelFormatter={d => format(new Date(d + 'T00:00:00'), 'MMMM d, yyyy')}
+                        />
+                        <Line type="monotone" dataKey="created" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} name="Created" />
+                        <Line type="monotone" dataKey="resolved" stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} name="Resolved" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Status distribution */}
+                  <div className="border border-gray-100 rounded-xl p-4">
+                    <h4 className="font-semibold text-gray-900 mb-3 text-sm">Status Distribution</h4>
+                    <div className="flex items-center gap-4">
+                      <ResponsiveContainer width="55%" height={220}>
+                        <PieChart>
+                          <Pie
+                            data={reportData.byStatus?.map(s => ({ name: s.status.replace('_', ' '), value: s.count })) || []}
+                            cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value"
+                          >
+                            {(reportData.byStatus || []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="flex-1 space-y-2">
+                        {(reportData.byStatus || []).map((s, i) => (
+                          <div key={s.status} className="flex items-center gap-2 text-xs">
+                            <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                            <span className="text-gray-600 flex-1 capitalize">{s.status.replace('_', ' ').toLowerCase()}</span>
+                            <span className="font-bold text-gray-800">{s.count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Priority + Department charts */}
+                <div className="grid lg:grid-cols-2 gap-6">
+                  {/* Priority breakdown */}
+                  <div className="border border-gray-100 rounded-xl p-4">
+                    <h4 className="font-semibold text-gray-900 mb-3 text-sm flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-orange-500" />
+                      By Priority
+                    </h4>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={reportData.byPriority?.map(p => ({ name: p.priority, count: p.count })) || []}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '12px' }} />
+                        <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Tickets">
+                          {(reportData.byPriority || []).map((p, i) => (
+                            <Cell key={i} fill={p.priority === 'URGENT' ? '#EF4444' : p.priority === 'NORMAL' ? '#3B82F6' : '#9CA3AF'} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Department breakdown */}
+                  <div className="border border-gray-100 rounded-xl p-4">
+                    <h4 className="font-semibold text-gray-900 mb-3 text-sm flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-primary-600" />
+                      By Department
+                    </h4>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={reportData.byDepartment?.map(d => ({ name: d.department?.name?.split(' ').slice(0, 2).join(' ') || '?', count: d.count, color: d.department?.color })) || []} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={90} />
+                        <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '12px' }} />
+                        <Bar dataKey="count" radius={[0, 4, 4, 0]} name="Tickets">
+                          {(reportData.byDepartment || []).map((d, i) => (
+                            <Cell key={i} fill={d.department?.color || COLORS[i % COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Servant Performance Table */}
+                {reportData.servantPerformance?.length > 0 && (
+                  <div className="border border-gray-100 rounded-xl p-4">
+                    <h4 className="font-semibold text-gray-900 mb-3 text-sm flex items-center gap-2">
+                      <Award className="w-4 h-4 text-amber-500" />
+                      Public Servant Performance
+                    </h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-100">
+                            <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Servant</th>
+                            <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Department</th>
+                            <th className="text-center py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Assigned</th>
+                            <th className="text-center py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Resolved</th>
+                            <th className="text-center py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Rate</th>
+                            <th className="text-center py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Avg Rating</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reportData.servantPerformance.map((s, i) => (
+                            <tr key={s.id} className={`border-b border-gray-50 ${i === 0 ? 'bg-amber-50/40' : ''}`}>
+                              <td className="py-2.5 px-3 font-medium text-gray-900 flex items-center gap-2">
+                                {i === 0 && <span className="text-amber-500 text-xs">★</span>}
+                                {s.name}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className="flex items-center gap-1.5 text-xs text-gray-600">
+                                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.departmentColor }} />
+                                  {s.department}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-semibold text-gray-700">{s.assigned}</td>
+                              <td className="py-2.5 px-3 text-center font-semibold text-green-600">{s.resolved}</td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                                  s.assigned ? (s.resolved / s.assigned >= 0.7 ? 'bg-green-100 text-green-700' : s.resolved / s.assigned >= 0.4 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700') : 'bg-gray-100 text-gray-500'
+                                }`}>
+                                  {s.assigned ? Math.round((s.resolved / s.assigned) * 100) : 0}%
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                {s.avgRating ? (
+                                  <span className="flex items-center justify-center gap-1 text-amber-600 font-medium text-xs">
+                                    <Star className="w-3 h-3 fill-amber-400" />
+                                    {s.avgRating.toFixed(1)}
+                                    <span className="text-gray-400">({s.totalRatings})</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400 text-xs">N/A</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Report footer */}
+                <div className="border-t border-gray-100 pt-4 flex items-center justify-between text-xs text-gray-400">
+                  <p>Aluguinsan E-Government Assistance System</p>
+                  <p>Generated on {format(new Date(), 'MMMM d, yyyy')} at {format(new Date(), 'h:mm a')}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── SLA BREACHES TAB ─────────────────────────────────────────────────
             List of tickets that have passed their SLA deadline without being
             resolved. Each entry shows the deadline timestamp and a relative
@@ -1372,6 +1939,62 @@ export default function AdminDashboard() {
           onClose={() => setDeletingCitizen(null)}
           onConfirm={handleDeleteCitizen}
         />
+      )}
+
+      {/* Reactivate ticket — requires admin password */}
+      {reactivatingTicket && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Reactivate Ticket</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Enter your admin password to reactivate ticket <span className="font-mono font-bold">#{reactivatingTicket.ticketNumber}</span>
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Admin Password</label>
+              <input
+                type="password"
+                className="input-field w-full"
+                placeholder="Enter your password"
+                value={reactivatePassword}
+                onChange={e => setReactivatePassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleReactivateTicket()}
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setReactivatingTicket(null); setReactivatePassword(''); }} className="btn-secondary flex-1">Cancel</button>
+              <button
+                onClick={handleReactivateTicket}
+                disabled={!reactivatePassword || reactivateLoading}
+                className="btn-primary flex-1 disabled:opacity-50"
+              >
+                {reactivateLoading ? 'Verifying...' : 'Reactivate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete ticket confirmation modal */}
+      {deletingTicket && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Ticket</h3>
+            <p className="text-sm text-gray-600 mb-1">
+              Are you sure you want to permanently delete ticket <span className="font-mono font-bold">#{deletingTicket.ticketNumber}</span>?
+            </p>
+            <p className="text-sm text-gray-500 mb-4">
+              <span className="font-medium">{deletingTicket.title}</span>
+            </p>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+              <p className="text-xs text-red-700">This will permanently delete the ticket, all messages, attachments, and notifications. This action cannot be undone.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDeletingTicket(null)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={handleDeleteTicket} className="btn-danger flex-1">Delete</button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
