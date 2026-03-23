@@ -419,8 +419,10 @@ export const updateProfile = async (req, res, next) => {
     if (newPassword) {
       if (!currentPassword) return res.status(400).json({ error: 'Current password is required to set a new one' });
       if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
-      if (!req.user.password) return res.status(400).json({ error: 'No password set for this account' });
-      const valid = await bcrypt.compare(currentPassword, req.user.password);
+      // Fetch password hash on-demand (not stored on req.user for security)
+      const fullUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { password: true } });
+      if (!fullUser?.password) return res.status(400).json({ error: 'No password set for this account' });
+      const valid = await bcrypt.compare(currentPassword, fullUser.password);
       if (!valid) return res.status(400).json({ error: 'Current password is incorrect' });
     }
 

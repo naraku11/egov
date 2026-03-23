@@ -14,20 +14,24 @@
  *                      redirecting them to their own dashboards instead.
  */
 
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import { LanguageProvider } from './contexts/LanguageContext.jsx';
 import { SocketProvider } from './contexts/SocketContext.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import AuthPage from './pages/AuthPage.jsx';
-import ClientDashboard from './pages/ClientDashboard.jsx';
-import SubmitConcern from './pages/SubmitConcern.jsx';
-import TrackTicket from './pages/TrackTicket.jsx';
-import ServantDashboard from './pages/ServantDashboard.jsx';
-import AdminDashboard from './pages/AdminDashboard.jsx';
-import AnnouncementsPage from './pages/AnnouncementsPage.jsx';
-import DirectoryPage from './pages/DirectoryPage.jsx';
-import ReportsPage from './pages/ReportsPage.jsx';
+
+// Lazy-load heavy pages — splits Recharts, jsPDF, etc. into separate chunks
+// so the initial bundle stays small and pages load on demand.
+const ClientDashboard   = lazy(() => import('./pages/ClientDashboard.jsx'));
+const SubmitConcern     = lazy(() => import('./pages/SubmitConcern.jsx'));
+const TrackTicket       = lazy(() => import('./pages/TrackTicket.jsx'));
+const ServantDashboard  = lazy(() => import('./pages/ServantDashboard.jsx'));
+const AdminDashboard    = lazy(() => import('./pages/AdminDashboard.jsx'));
+const AnnouncementsPage = lazy(() => import('./pages/AnnouncementsPage.jsx'));
+const DirectoryPage     = lazy(() => import('./pages/DirectoryPage.jsx'));
+const ReportsPage       = lazy(() => import('./pages/ReportsPage.jsx'));
 
 /**
  * Full-screen centered loading indicator shown while the auth state is being
@@ -86,6 +90,7 @@ const AppRoutes = () => {
   const { isAuthenticated, isServant, isAdmin } = useAuth();
 
   return (
+    <Suspense fallback={<Spinner />}>
     <Routes>
       {/* Public landing page — accessible to everyone */}
       <Route path="/" element={<LandingPage />} />
@@ -120,6 +125,7 @@ const AppRoutes = () => {
       {/* Catch-all: unknown paths fall back to the landing page */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   );
 };
 

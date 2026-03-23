@@ -21,6 +21,7 @@ import 'dotenv/config';
 import { createServer } from 'http';
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
@@ -61,6 +62,10 @@ const PORT = process.env.PORT || 5000;
 app.set('trust proxy', 1);
 
 // ── Security middleware ───────────────────────────────────────────────────────
+
+// Compress all HTTP responses (gzip/brotli) — typically 60-80% size reduction
+// for JSON and HTML payloads. Must come before route handlers.
+app.use(compression());
 
 // Helmet sets sensible HTTP security headers (CSP, HSTS, X-Frame-Options …).
 // crossOriginResourcePolicy is relaxed to 'cross-origin' so that the React
@@ -111,7 +116,10 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve user-uploaded files (profile photos, attachments) directly from the
 // uploads/ directory that lives next to the backend src/ folder.
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads'), {
+  maxAge: '7d',   // uploaded files are immutable (new uploads get new filenames)
+  etag: true,
+}));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -rh \"api\\\\.\\\\\\(get\\\\|post\\\\|put\\\\|patch\\\\|delete\\\\\\)\\(\\\\`\" /f/Upload/Projects/deploy/egov/frontend/src/pages /f/Upload/Projects/deploy/egov/frontend/src/components)",
+      "Bash(grep -o \"api\\\\.[a-z]*\\(\\\\`[^\\\\`]*\\\\`\")",
+      "Bash(grep -n \"TODO\\\\|FIXME\\\\|XXX\\\\|HACK\\\\|BUG\\\\|console\\\\.error\\\\|console\\\\.warn\" /f/Upload/Projects/deploy/egov/frontend/src/pages/*.jsx /f/Upload/Projects/deploy/egov/frontend/src/components/*.jsx /f/Upload/Projects/deploy/egov/frontend/src/contexts/*.jsx)",
+      "Bash(for key:*)",
+      "Bash(grep -q \"^    $key:\" /f/Upload/Projects/deploy/egov/frontend/src/i18n/translations.js)",
+      "Bash(echo \"✓ $key\")",
+      "Bash(echo \"✗ MISSING: $key\")",
+      "Bash(npm list:*)"
+    ]
+  }
+}

@@ -52,21 +52,16 @@ router.get('/stats', authenticate, requireAdmin, async (req, res, next) => {
       prisma.servant.count(),
     ]);
 
-    // Group ticket counts by status, priority, and department for chart data
-    const byStatus = await prisma.ticket.groupBy({
-      by: ['status'],
-      _count: true,
-    });
-
-    const byPriority = await prisma.ticket.groupBy({
-      by: ['priority'],
-      _count: true,
-    });
-
-    const byDepartment = await prisma.ticket.groupBy({
-      by: ['departmentId'],
-      _count: true,
-    });
+    // Group ticket counts by status, priority, department + aggregates — all in parallel
+    const [byStatus, byPriority, byDepartment, avgRating, slaBreaches] = await Promise.all([
+      prisma.ticket.groupBy({ by: ['status'], _count: true }),
+      prisma.ticket.groupBy({ by: ['priority'], _count: true }),
+      prisma.ticket.groupBy({ by: ['departmentId'], _count: true }),
+      prisma.feedback.aggregate({ _avg: { rating: true }, _count: true }),
+      prisma.ticket.count({
+        where: { slaDeadline: { lt: new Date() }, status: { notIn: ['RESOLVED', 'CLOSED'] } },
+      }),
+    ]);
 
     // Enrich department IDs with their full name/code/color for the UI
     const departmentIds = byDepartment.map(d => d.departmentId);
@@ -75,32 +70,24 @@ router.get('/stats', authenticate, requireAdmin, async (req, res, next) => {
       select: { id: true, name: true, code: true, color: true },
     });
 
-    // Merge department metadata into the grouped count records
     const deptStats = byDepartment.map(d => ({
       count: d._count,
       department: departments.find(dept => dept.id === d.departmentId),
     }));
 
-    // Single aggregate for average rating and total feedback submissions
-    const avgRating = await prisma.feedback.aggregate({ _avg: { rating: true }, _count: true });
-
-    // SLA breach count: tickets past their deadline that are still open
-    const slaBreaches = await prisma.ticket.count({
-      where: {
-        slaDeadline: { lt: new Date() },
-        status: { notIn: ['RESOLVED', 'CLOSED'] },
-      },
-    });
-
     // Build a day-by-day ticket creation trend for the last 7 days
+    // Single query instead of 7 sequential counts
+    const trendStart = new Date(); trendStart.setDate(trendStart.getDate() - 6); trendStart.setHours(0, 0, 0, 0);
+    const trendTickets = await prisma.ticket.findMany({
+      where: { createdAt: { gte: trendStart } },
+      select: { createdAt: true },
+    });
     const last7 = [];
     for (let i = 6; i >= 0; i--) {
-      const day = new Date();
-      day.setDate(day.getDate() - i);
-      const start = new Date(day.setHours(0, 0, 0, 0));
-      const end = new Date(day.setHours(23, 59, 59, 999));
-      const count = await prisma.ticket.count({ where: { createdAt: { gte: start, lte: end } } });
-      last7.push({ date: start.toISOString().split('T')[0], count });
+      const day = new Date(); day.setDate(day.getDate() - i);
+      const dateStr = new Date(day.setHours(0, 0, 0, 0)).toISOString().split('T')[0];
+      const count = trendTickets.filter(t => t.createdAt.toISOString().split('T')[0] === dateStr).length;
+      last7.push({ date: dateStr, count });
     }
 
     res.json({
@@ -275,67 +262,81 @@ router.get('/reports', authenticate, requireAdmin, async (req, res, next) => {
     });
     const servantIds = servantStats.map(s => s.servantId).filter(Boolean);
 
-    const [servantDetails, servantRatings] = await Promise.all([
-      prisma.servant.findMany({
-        where: { id: { in: servantIds } },
-        select: { id: true, name: true, department: { select: { name: true, color: true } } },
-      }),
-      prisma.feedback.groupBy({
-        by: ['ticketId'],
-        where: { ticket: { servantId: { in: servantIds }, ...dateFilter } },
-        _avg: { rating: true },
-      }),
-    ]);
+    const servantDetails = await prisma.servant.findMany({
+      where: { id: { in: servantIds } },
+      select: { id: true, name: true, department: { select: { name: true, color: true } } },
+    });
 
-    // Per-servant resolved ticket counts (run in parallel per servant)
-    const servantResolvedCounts = await Promise.all(
-      servantIds.map(id => prisma.ticket.count({ where: { ...dateFilter, servantId: id, status: 'RESOLVED' } }))
-    );
+    // Per-servant resolved counts — single groupBy instead of N individual counts
+    const servantResolvedGroup = await prisma.ticket.groupBy({
+      by: ['servantId'],
+      where: { ...dateFilter, servantId: { in: servantIds }, status: 'RESOLVED' },
+      _count: true,
+    });
+    const servantResolvedMap = Object.fromEntries(servantResolvedGroup.map(s => [s.servantId, s._count]));
 
-    // Build a rating map keyed by servantId (placeholder — populated via servantAvgRatings below)
-    const servantRatingMap = {};
-    for (const sr of servantRatings) {
-      // aggregate per servant
+    // Per-servant average ratings — single raw aggregate instead of N individual aggregates
+    const servantRatingGroup = await prisma.feedback.groupBy({
+      by: ['ticketId'],
+      where: { ticket: { servantId: { in: servantIds }, ...dateFilter } },
+      _avg: { rating: true },
+    });
+    // Map ratings back to servantId by looking up ticket ownership
+    const ratingTicketIds = servantRatingGroup.map(r => r.ticketId);
+    const ratingTickets = ratingTicketIds.length ? await prisma.ticket.findMany({
+      where: { id: { in: ratingTicketIds } },
+      select: { id: true, servantId: true },
+    }) : [];
+    const ticketServantMap = Object.fromEntries(ratingTickets.map(t => [t.id, t.servantId]));
+
+    // Aggregate ratings per servant
+    const servantRatingAgg = {};
+    for (const r of servantRatingGroup) {
+      const sid = ticketServantMap[r.ticketId];
+      if (!sid) continue;
+      if (!servantRatingAgg[sid]) servantRatingAgg[sid] = { sum: 0, count: 0 };
+      if (r._avg.rating != null) { servantRatingAgg[sid].sum += r._avg.rating; servantRatingAgg[sid].count++; }
     }
 
-    // Per-servant average rating aggregates (parallel)
-    const servantAvgRatings = await Promise.all(
-      servantIds.map(id =>
-        prisma.feedback.aggregate({ where: { ticket: { servantId: id, ...dateFilter } }, _avg: { rating: true }, _count: true })
-      )
-    );
-
     // Assemble the final per-servant performance array, sorted by resolved count descending
-    const servantPerformance = servantIds.map((id, i) => {
+    const servantPerformance = servantIds.map((id) => {
       const s = servantDetails.find(d => d.id === id);
       const stat = servantStats.find(s => s.servantId === id);
+      const ra = servantRatingAgg[id];
       return {
         id,
         name: s?.name || 'Unknown',
         department: s?.department?.name || '',
         departmentColor: s?.department?.color || '#3B82F6',
         assigned: stat?._count || 0,
-        resolved: servantResolvedCounts[i],
-        avgRating: servantAvgRatings[i]._avg.rating,
-        totalRatings: servantAvgRatings[i]._count,
+        resolved: servantResolvedMap[id] || 0,
+        avgRating: ra ? ra.sum / ra.count : null,
+        totalRatings: ra?.count || 0,
       };
     }).sort((a, b) => b.resolved - a.resolved);
 
-    // Daily created vs. resolved trend — one entry per calendar day in the range
-    // For 'all', we default to the last 30 days to keep the response size reasonable
+    // Daily created vs. resolved trend — single bulk query instead of N sequential pairs
     const days = range === 'all' ? 30 : parseInt(range);
+    const trendRangeStart = new Date(); trendRangeStart.setDate(trendRangeStart.getDate() - (days - 1)); trendRangeStart.setHours(0, 0, 0, 0);
+    const [trendCreated, trendResolved] = await Promise.all([
+      prisma.ticket.findMany({
+        where: { createdAt: { gte: trendRangeStart } },
+        select: { createdAt: true },
+      }),
+      prisma.ticket.findMany({
+        where: { resolvedAt: { gte: trendRangeStart }, status: 'RESOLVED' },
+        select: { resolvedAt: true },
+      }),
+    ]);
     const trend = [];
     for (let i = days - 1; i >= 0; i--) {
-      const day = new Date();
-      day.setDate(day.getDate() - i);
-      const start = new Date(day); start.setHours(0, 0, 0, 0);
-      const end   = new Date(day); end.setHours(23, 59, 59, 999);
-      // Count new tickets created that day and tickets resolved that day
-      const [created, resolvedDay] = await Promise.all([
-        prisma.ticket.count({ where: { createdAt: { gte: start, lte: end } } }),
-        prisma.ticket.count({ where: { resolvedAt: { gte: start, lte: end }, status: 'RESOLVED' } }),
-      ]);
-      trend.push({ date: start.toISOString().split('T')[0], created, resolved: resolvedDay });
+      const day = new Date(); day.setDate(day.getDate() - i);
+      const dateStr = new Date(day.setHours(0, 0, 0, 0)).toISOString().split('T')[0];
+      trend.push({
+        date: dateStr,
+        created:  trendCreated.filter(t => t.createdAt.toISOString().split('T')[0] === dateStr).length,
+        resolved: trendResolved.filter(t => t.resolvedAt.toISOString().split('T')[0] === dateStr).length,
+      });
     }
 
     res.json({

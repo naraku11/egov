@@ -231,7 +231,7 @@ The AI classifier uses Claude to analyze concern text in any of the three suppor
 | PUT | `/api/admin/users/:id` | Edit citizen (name, email, phone, barangay, password, isVerified) |
 | DELETE | `/api/admin/users/:id` | Delete citizen (blocked if has tickets) |
 | PATCH | `/api/admin/users/:id/archive` | Toggle citizen archive (isVerified) |
-| GET | `/api/admin/reports` | Analytics report (query: `range=1\|15\|365\|all`) |
+| GET | `/api/admin/reports` | Analytics report (query: `range=1\|7\|15\|30\|90\|365\|all`) |
 | GET | `/api/admin/sla-breaches` | Overdue tickets |
 | DELETE | `/api/admin/tickets/:id` | Permanently delete ticket (cascade) |
 | PATCH | `/api/admin/tickets/:id/archive` | Archive or reactivate ticket (reactivate requires password) |
@@ -297,8 +297,20 @@ egov/
     ├── 02-seed-admin.sql
     ├── 03-seed-servants.sql
     ├── 04-seed-citizens.sql
-    └── 05-add-message-attachments.sql
+    ├── 05-add-message-attachments.sql
+    └── 06-seed-directory.sql
 ```
+
+---
+
+## Performance
+
+- **Gzip compression** on all HTTP responses via `compression` middleware (60-80% size reduction)
+- **Route-level code splitting** — heavy pages (AdminDashboard, ReportsPage, etc.) lazy-loaded with `React.lazy()` + `Suspense`, keeping the initial JS bundle small
+- **Batch DB queries** — admin stats and reports endpoints use bulk fetches + in-memory grouping instead of N+1 sequential queries (e.g. 365-day trend: 2 queries instead of 730)
+- **Parallelised queries** — independent database calls run concurrently via `Promise.all()`
+- **Static asset caching** — hashed JS/CSS cached 7 days; uploaded files cached 7 days with etag
+- **Lean auth middleware** — password hash excluded from `req.user`; fetched on-demand only when needed
 
 ---
 
@@ -306,12 +318,14 @@ egov/
 
 - JWT authentication (7-day expiry)
 - bcrypt password hashing (cost factor 10)
+- Password hash never stored on request context (fetched on-demand for profile updates only)
 - OTP verification for citizen accounts (SMS primary, email fallback)
 - Email validation: format check, disposable domain blocking, MX record verification
 - Registration deferred until OTP verified (no unverified accounts in DB)
 - Rate limiting (200 req/15 min global, 20 req/15 min auth)
 - Helmet.js security headers
 - CORS with origin whitelist
+- Gzip response compression
 - File upload validation (type + size limits, max 5 per message)
 - Role-based access control (CLIENT / SERVANT / ADMIN)
 

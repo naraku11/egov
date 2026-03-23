@@ -66,8 +66,11 @@ export const authenticate = async (req, res, next) => {
       req.servant = servant;      // Attach the full servant record for downstream use.
       req.userType = 'servant';   // Mark the request type so authorization guards work.
     } else {
-      // Fetch the regular citizen/user record.
-      const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+      // Fetch the regular citizen/user record — exclude password hash for security.
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.id },
+        select: { id: true, name: true, email: true, phone: true, role: true, barangay: true, address: true, isVerified: true, language: true, avatarUrl: true, createdAt: true, updatedAt: true },
+      });
 
       // Token is valid but the user account no longer exists.
       if (!user) return res.status(401).json({ error: 'Invalid token' });
