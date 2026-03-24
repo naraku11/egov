@@ -1,6 +1,6 @@
 /**
  * @file Navbar.jsx
- * @description Top-level navigation bar for the Aluguinsan E-Gov Portal.
+ * @description Top-level navigation bar for the Aloguinsan E-Gov Portal.
  *
  * Responsibilities:
  *  - Renders the application logo and role-aware navigation links (admin,
@@ -255,7 +255,7 @@ export default function Navbar() {
                 AG
               </div>
               <div className="hidden sm:block leading-none">
-                <p className="text-sm font-bold text-gray-900">Aluguinsan</p>
+                <p className="text-sm font-bold text-gray-900">Aloguinsan</p>
                 <p className="text-[11px] text-gray-400 font-medium tracking-wide">E-GOV PORTAL</p>
               </div>
             </Link>

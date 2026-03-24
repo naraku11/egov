@@ -16,7 +16,7 @@ export default function TermsPage() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-gray-900">Terms and Conditions</h1>
-              <p className="text-sm text-gray-500">Aluguinsan E-Government Portal</p>
+              <p className="text-sm text-gray-500">Aloguinsan E-Government Portal</p>
             </div>
           </div>
 
@@ -25,12 +25,12 @@ export default function TermsPage() {
 
             <section>
               <h3 className="text-base font-bold text-gray-900">1. Acceptance of Terms</h3>
-              <p>By registering and using the Aluguinsan E-Government Assistance System ("the Portal"), you agree to be bound by these Terms and Conditions. If you do not agree, please do not use the Portal.</p>
+              <p>By registering and using the Aloguinsan E-Government Assistance System ("the Portal"), you agree to be bound by these Terms and Conditions. If you do not agree, please do not use the Portal.</p>
             </section>
 
             <section>
               <h3 className="text-base font-bold text-gray-900">2. Eligibility</h3>
-              <p>The Portal is available to residents of the Municipality of Aluguinsan, Province of Cebu, Philippines. Users must be at least 18 years of age or have parental/guardian consent. A valid government-issued ID is required for identity verification during registration.</p>
+              <p>The Portal is available to residents of the Municipality of Aloguinsan, Province of Cebu, Philippines. Users must be at least 18 years of age or have parental/guardian consent. A valid government-issued ID is required for identity verification during registration.</p>
             </section>
 
             <section>
@@ -78,12 +78,12 @@ export default function TermsPage() {
 
             <section>
               <h3 className="text-base font-bold text-gray-900">8. Intellectual Property</h3>
-              <p>All content, design, and functionality of the Portal are the property of the Municipality of Aluguinsan. Users retain ownership of content they submit (e.g., descriptions, photos) but grant the municipality a non-exclusive license to use such content for service delivery purposes.</p>
+              <p>All content, design, and functionality of the Portal are the property of the Municipality of Aloguinsan. Users retain ownership of content they submit (e.g., descriptions, photos) but grant the municipality a non-exclusive license to use such content for service delivery purposes.</p>
             </section>
 
             <section>
               <h3 className="text-base font-bold text-gray-900">9. Limitation of Liability</h3>
-              <p>The Portal is provided "as is." The Municipality of Aluguinsan shall not be liable for any indirect, incidental, or consequential damages arising from the use of the Portal, including but not limited to service disruptions, data loss, or delayed responses.</p>
+              <p>The Portal is provided "as is." The Municipality of Aloguinsan shall not be liable for any indirect, incidental, or consequential damages arising from the use of the Portal, including but not limited to service disruptions, data loss, or delayed responses.</p>
             </section>
 
             <section>
@@ -95,9 +95,9 @@ export default function TermsPage() {
               <h3 className="text-base font-bold text-gray-900">11. Contact</h3>
               <p>For questions about these terms, contact the Municipal Administrator's Office:</p>
               <ul className="list-disc pl-5 space-y-1">
-                <li>Email: info@aluguinsan-egov.online</li>
+                <li>Email: info@aloguinsan-egov.online</li>
                 <li>Phone: (032) 473-XXXX</li>
-                <li>Address: Municipal Hall, Poblacion, Aluguinsan, Cebu, Philippines</li>
+                <li>Address: Municipal Hall, Poblacion, Aloguinsan, Cebu, Philippines</li>
               </ul>
             </section>
           </div>

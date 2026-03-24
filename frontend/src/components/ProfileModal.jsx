@@ -22,11 +22,11 @@ import api from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
 /**
- * Exhaustive list of barangays belonging to Aluguinsan, Cebu.
+ * Exhaustive list of barangays belonging to Aloguinsan, Cebu.
  * Presented as a <select> option list for residents.
  */
 const BARANGAY_LIST = [
-  'Aluguinsan', 'Babayongan', 'Bajumpandan', 'Baring', 'Bongba',
+  'Aloguinsan', 'Babayongan', 'Bajumpandan', 'Baring', 'Bongba',
   'Cabitoonan', 'Calangcang', 'Candabong', 'Compostela', 'Gawi',
   'Kabalaasan', 'Kabangkalan', 'Kanghumaod', 'Kanguha', 'Katipunan',
   'Langin', 'Libertad', 'Looc', 'Mainggit', 'Mandao',

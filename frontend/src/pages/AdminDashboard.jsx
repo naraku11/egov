@@ -1,6 +1,6 @@
 /**
  * @file AdminDashboard.jsx
- * @description System administration panel for the Aluguinsan E-Gov Portal.
+ * @description System administration panel for the Aloguinsan E-Gov Portal.
  *
  * This page is only accessible to users with the ADMIN role. It provides a
  * tabbed interface covering four areas:
@@ -220,7 +220,7 @@ function ServantModal({ servant, departments, onClose, onSaved }) {
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-              <input type="email" className="input-field" placeholder="servant@aluguinsan.gov.ph" value={form.email} onChange={set('email')} required />
+              <input type="email" className="input-field" placeholder="servant@aloguinsan.gov.ph" value={form.email} onChange={set('email')} required />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Position *</label>

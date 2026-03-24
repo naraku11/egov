@@ -1,6 +1,6 @@
 /**
  * @file AuthPage.jsx
- * @description Unified authentication page for the Aluguinsan E-Gov Portal.
+ * @description Unified authentication page for the Aloguinsan E-Gov Portal.
  *
  * Handles three distinct flows within a single route (/auth):
  *
@@ -618,7 +618,7 @@ export default function AuthPage() {
           <div className="w-16 h-16 bg-white/15 backdrop-blur-sm rounded-2xl flex items-center justify-center text-white font-bold text-2xl mb-6 border border-white/20">
             AG
           </div>
-          <h1 className="text-3xl font-bold mb-3">Aluguinsan E-Gov Portal</h1>
+          <h1 className="text-3xl font-bold mb-3">Aloguinsan E-Gov Portal</h1>
           <p className="text-primary-100 text-base leading-relaxed">
             Your digital gateway to municipal services. Submit concerns, track progress, and connect with your local government — all in one place.
           </p>
@@ -656,7 +656,7 @@ export default function AuthPage() {
         </div>
 
         <p className="relative z-10 text-xs text-primary-200">
-          Municipality of Aluguinsan, Cebu
+          Municipality of Aloguinsan, Cebu
         </p>
       </div>
 
@@ -682,11 +682,11 @@ export default function AuthPage() {
               </div>
               <h1 className="text-xl font-bold text-gray-900 lg:text-2xl">
                 <span className="hidden lg:inline">Welcome Back</span>
-                <span className="lg:hidden">Aluguinsan E-Gov Portal</span>
+                <span className="lg:hidden">Aloguinsan E-Gov Portal</span>
               </h1>
               <p className="text-sm text-gray-500 mt-1">
                 <span className="hidden lg:inline">Sign in to access your account</span>
-                <span className="lg:hidden">Municipality of Aluguinsan, Cebu</span>
+                <span className="lg:hidden">Municipality of Aloguinsan, Cebu</span>
               </p>
             </div>
 
@@ -1359,7 +1359,7 @@ export default function AuthPage() {
                     <input type="checkbox" checked={agreedToTerms} onChange={e => setAgreedToTerms(e.target.checked)}
                       className="mt-0.5 w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 flex-shrink-0" />
                     <span className="text-xs text-gray-600 leading-relaxed">
-                      I agree to the <button type="button" onClick={() => window.open('/terms', '_blank')} className="text-primary-600 font-semibold hover:underline">Terms and Conditions</button> and <button type="button" onClick={() => window.open('/terms', '_blank')} className="text-primary-600 font-semibold hover:underline">Privacy Policy</button> of the Aluguinsan E-Gov Portal. I confirm that the information and ID photo provided are accurate.
+                      I agree to the <button type="button" onClick={() => window.open('/terms', '_blank')} className="text-primary-600 font-semibold hover:underline">Terms and Conditions</button> and <button type="button" onClick={() => window.open('/terms', '_blank')} className="text-primary-600 font-semibold hover:underline">Privacy Policy</button> of the Aloguinsan E-Gov Portal. I confirm that the information and ID photo provided are accurate.
                     </span>
                   </label>
 

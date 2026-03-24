@@ -47,7 +47,7 @@ const emailTemplate = (title, body, cta, ctaLabel) => `
       <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
         <!-- Header -->
         <tr><td style="background:linear-gradient(135deg,#1e3a5f,#2563eb);padding:24px 32px;text-align:center">
-          <h1 style="margin:0;color:#ffffff;font-size:18px;font-weight:600">Municipality of Aluguinsan</h1>
+          <h1 style="margin:0;color:#ffffff;font-size:18px;font-weight:600">Municipality of Aloguinsan</h1>
           <p style="margin:4px 0 0;color:#93c5fd;font-size:12px">E-Government Assistance System</p>
         </td></tr>
         <!-- Body -->
@@ -61,7 +61,7 @@ const emailTemplate = (title, body, cta, ctaLabel) => `
         </td></tr>
         <!-- Footer -->
         <tr><td style="padding:16px 32px;background:#f9fafb;border-top:1px solid #e5e7eb;text-align:center">
-          <p style="margin:0;color:#9ca3af;font-size:11px">Municipality of Aluguinsan, Province of Cebu, Philippines</p>
+          <p style="margin:0;color:#9ca3af;font-size:11px">Municipality of Aloguinsan, Province of Cebu, Philippines</p>
           <p style="margin:4px 0 0;color:#9ca3af;font-size:11px">This is an automated message — please do not reply directly.</p>
         </td></tr>
       </table>
@@ -85,7 +85,7 @@ export const sendEmailNotification = async (to, subject, html) => {
   if (!to || !from || !process.env.SMTP_USER) return;
   try {
     await getTransporter().sendMail({
-      from: `"Aluguinsan E-Gov" <${from}>`,
+      from: `"Aloguinsan E-Gov" <${from}>`,
       to,
       subject,
       html,
@@ -124,7 +124,7 @@ export const createNotification = async (userId, ticketId, type, title, message)
     });
 
     if (user?.email) {
-      const clientUrl = process.env.CLIENT_URL || 'https://aluguinsan-egov.online';
+      const clientUrl = process.env.CLIENT_URL || 'https://aloguinsan-egov.online';
       const ticketUrl = ticketId ? `${clientUrl}/track?ticket=${ticketId}` : clientUrl;
       const html = emailTemplate(
         title,
@@ -168,11 +168,11 @@ export const sendResetCodeEmail = async (to, name, code) => {
  * @param {string} name - Recipient name
  */
 export const sendWelcomeEmail = async (to, name) => {
-  const clientUrl = process.env.CLIENT_URL || 'https://aluguinsan-egov.online';
+  const clientUrl = process.env.CLIENT_URL || 'https://aloguinsan-egov.online';
   const html = emailTemplate(
-    'Welcome to E-Gov Aluguinsan!',
+    'Welcome to E-Gov Aloguinsan!',
     `<p>Hi <strong>${name}</strong>,</p>
-     <p>Thank you for registering with the Municipality of Aluguinsan E-Government Assistance System.</p>
+     <p>Thank you for registering with the Municipality of Aloguinsan E-Government Assistance System.</p>
      <p>You can now:</p>
      <ul style="color:#374151;font-size:14px;line-height:1.8">
        <li>Submit concerns and service requests</li>
@@ -182,7 +182,7 @@ export const sendWelcomeEmail = async (to, name) => {
     clientUrl,
     'Go to Portal'
   );
-  await sendEmailNotification(to, '[E-Gov] Welcome to Aluguinsan E-Gov', html);
+  await sendEmailNotification(to, '[E-Gov] Welcome to Aloguinsan E-Gov', html);
 };
 
 /**

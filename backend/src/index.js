@@ -1,6 +1,6 @@
 /**
  * @file backend/src/index.js
- * @description Main Express application bootstrap for the E-Gov Aluguinsan API.
+ * @description Main Express application bootstrap for the E-Gov Aloguinsan API.
  *
  * Responsibilities:
  *  - Loads environment variables via dotenv before any other module runs.
@@ -128,7 +128,7 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads'), {
 app.get('/health', async (req, res) => {
   const health = {
     status: 'ok',
-    service: 'E-Gov Aluguinsan API',
+    service: 'E-Gov Aloguinsan API',
     timestamp: new Date().toISOString(),
     uptime: Math.floor(process.uptime()) + 's',
     environment: process.env.NODE_ENV || 'development',
@@ -260,7 +260,7 @@ app.use(errorHandler);
 // ── Start server ──────────────────────────────────────────────────────────────
 
 httpServer.listen(PORT, () => {
-  console.log(`\n🏛️  E-Gov Aluguinsan API running on port ${PORT}`);
+  console.log(`\n🏛️  E-Gov Aloguinsan API running on port ${PORT}`);
   console.log(`📚 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 Health: http://localhost:${PORT}/health\n`);
 });

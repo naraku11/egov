@@ -1,6 +1,6 @@
 /**
  * @file translations.js
- * @description Static internationalisation (i18n) data for the Aluguinsan
+ * @description Static internationalisation (i18n) data for the Aloguinsan
  * E-Gov Portal.
  *
  * Three top-level exports are provided:
@@ -10,7 +10,7 @@
  *     keys to their localised strings.  Consumed by LanguageContext to power
  *     the `t(key)` helper used throughout the UI.
  *
- *  2. `barangays`           — Array of barangay names belonging to Aluguinsan
+ *  2. `barangays`           — Array of barangay names belonging to Aloguinsan
  *     used to populate address-selection dropdowns.
  *
  *  3. `concernCategories`   — Array of ticket category descriptors, each with
@@ -70,7 +70,7 @@ export const translations = {
     welcomeBack: 'Welcome Back',
     signInToAccount: 'Sign in to your account',
     createAccount: 'Create Account',
-    joinPortal: 'Join the Aluguinsan E-Gov Portal',
+    joinPortal: 'Join the Aloguinsan E-Gov Portal',
     emailOrPhone: 'Email or Phone Number',
     password: 'Password',
     confirmPassword: 'Confirm Password',
@@ -203,7 +203,7 @@ export const translations = {
     welcomeBack: 'Maligayang Pagbabalik',
     signInToAccount: 'Mag-sign in sa inyong account',
     createAccount: 'Gumawa ng Account',
-    joinPortal: 'Sumali sa E-Gov Portal ng Aluguinsan',
+    joinPortal: 'Sumali sa E-Gov Portal ng Aloguinsan',
     emailOrPhone: 'Email o Numero ng Telepono',
     password: 'Password',
     confirmPassword: 'Kumpirmahin ang Password',
@@ -324,7 +324,7 @@ export const translations = {
     welcomeBack: 'Maayong Pagbalik',
     signInToAccount: 'Mag-sign in sa inyong account',
     createAccount: 'Maghimo og Account',
-    joinPortal: 'Apil sa E-Gov Portal sa Aluguinsan',
+    joinPortal: 'Apil sa E-Gov Portal sa Aloguinsan',
     emailOrPhone: 'Email o Numero sa Telepono',
     password: 'Password',
     confirmPassword: 'Kumpirmahi ang Password',
@@ -418,7 +418,7 @@ export const translations = {
 };
 
 /**
- * Canonical list of barangays in Aluguinsan, Cebu used in address-selection
+ * Canonical list of barangays in Aloguinsan, Cebu used in address-selection
  * dropdowns across the portal.  Kept here alongside translations so that
  * localisation data remains in a single file.
  *

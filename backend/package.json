@@ -1,7 +1,7 @@
 {
-  "name": "egov-aluguinsan-backend",
+  "name": "egov-aloguinsan-backend",
   "version": "1.0.0",
-  "description": "E-Government Assistance System Backend - Aluguinsan, Cebu",
+  "description": "E-Government Assistance System Backend - Aloguinsan, Cebu",
   "type": "module",
   "main": "src/index.js",
   "scripts": {

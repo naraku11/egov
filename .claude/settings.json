@@ -12,7 +12,8 @@
       "Bash(node -e \":*)",
       "Bash(grep -n \"className.*button.*w-[34].*h-[34]\\\\|className.*p-1.*w-[34].*h-[34]\" /f/Upload/Projects/deploy/egov/frontend/src/pages/*.jsx)",
       "Bash(grep -E \"^/f/Upload/Projects/deploy/egov/backend/[^/]+\\(/[^/]+\\)?$\")",
-      "Bash(grep -E \"^/f/Upload/Projects/deploy/egov/frontend/[^/]+\\(/[^/]+\\)?$\")"
+      "Bash(grep -E \"^/f/Upload/Projects/deploy/egov/frontend/[^/]+\\(/[^/]+\\)?$\")",
+      "Bash(xargs sed:*)"
     ]
   }
 }

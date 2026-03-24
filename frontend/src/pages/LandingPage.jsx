@@ -1,6 +1,6 @@
 /**
  * @file LandingPage.jsx
- * @description Public-facing entry point for the Aluguinsan E-Government Assistance System.
+ * @description Public-facing entry point for the Aloguinsan E-Government Assistance System.
  *
  * This page is shown to unauthenticated visitors and serves as the primary marketing /
  * information surface for the portal. It includes:
@@ -98,7 +98,7 @@ export default function LandingPage() {
               {/* Municipality location badge */}
               <div className="inline-flex items-center gap-2 bg-white/10 rounded-full px-4 py-1.5 text-sm mb-6">
                 <MapPin className="w-4 h-4" />
-                Municipality of Aluguinsan, Cebu
+                Municipality of Aloguinsan, Cebu
               </div>
 
               {/* Hero headline and sub-headline — text driven by current locale */}
@@ -278,7 +278,7 @@ export default function LandingPage() {
       <section className="py-20 bg-primary-700 text-white">
         <div className="max-w-3xl mx-auto text-center px-4">
           <h2 className="text-3xl font-bold mb-4">Ready to Report a Concern?</h2>
-          <p className="text-blue-100 mb-8">Join thousands of Aluguinsan residents using the E-Gov portal for faster, more transparent public service.</p>
+          <p className="text-blue-100 mb-8">Join thousands of Aloguinsan residents using the E-Gov portal for faster, more transparent public service.</p>
           <div className="flex flex-wrap justify-center gap-3">
             <Link to="/auth?tab=register" className="bg-white text-primary-800 px-8 py-3 rounded-xl font-semibold hover:bg-blue-50 transition-all flex items-center gap-2">
               {t('getStarted')} <ArrowRight className="w-4 h-4" />
@@ -297,7 +297,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
-              <p className="text-white font-semibold">Municipality of Aluguinsan</p>
+              <p className="text-white font-semibold">Municipality of Aloguinsan</p>
               <p className="text-sm">Province of Cebu, Philippines</p>
             </div>
             <div className="text-sm text-center">
@@ -305,11 +305,11 @@ export default function LandingPage() {
             </div>
             <div className="text-sm text-right">
               <p>Hotline: (032) 000-0000</p>
-              <p>info@aluguinsan-egov.online</p>
+              <p>info@aloguinsan-egov.online</p>
             </div>
           </div>
           <div className="mt-6 pt-6 border-t border-gray-800 text-xs text-center">
-            © 2026 Municipality of Aluguinsan. All rights reserved.
+            © 2026 Municipality of Aloguinsan. All rights reserved.
           </div>
         </div>
       </footer>

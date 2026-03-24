@@ -1,7 +1,7 @@
 {
-  "name": "egov-aluguinsan-frontend",
+  "name": "egov-aloguinsan-frontend",
   "version": "1.0.0",
-  "description": "E-Government Assistance System - Aluguinsan, Cebu",
+  "description": "E-Government Assistance System - Aloguinsan, Cebu",
   "type": "module",
   "scripts": {
     "dev": "vite",

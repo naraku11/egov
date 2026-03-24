@@ -228,7 +228,7 @@ export default function SidebarLayout({ children }) {
         </div>
         {(!collapsed || isMobile) && (
           <div className="leading-none">
-            <p className="text-sm font-bold text-gray-900">Aluguinsan</p>
+            <p className="text-sm font-bold text-gray-900">Aloguinsan</p>
             <p className="text-[11px] text-gray-400 font-medium tracking-wide">E-GOV PORTAL</p>
           </div>
         )}
@@ -430,7 +430,7 @@ export default function SidebarLayout({ children }) {
             </button>
             <div className="flex items-center gap-2 ml-2 min-w-0 flex-1">
               <div className="w-7 h-7 rounded-lg bg-primary-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">AG</div>
-              <span className="text-sm font-bold text-gray-900 truncate">Aluguinsan E-Gov</span>
+              <span className="text-sm font-bold text-gray-900 truncate">Aloguinsan E-Gov</span>
             </div>
             {!isAdmin && (
               <div className="relative" ref={notifRef}>

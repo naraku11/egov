@@ -431,7 +431,7 @@ export default function ReportsPage() {
         {/* Report header — shown in PDF */}
         <div className="border-b border-gray-100 pb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Municipality of Aluguinsan — E-Gov Analytics Report</h2>
+            <h2 className="text-lg font-bold text-gray-900">Municipality of Aloguinsan — E-Gov Analytics Report</h2>
             <p className="text-xs text-gray-500 mt-1">
               Period: <span className="font-medium text-gray-700">{RANGE_OPTIONS.find(o => o.value === range)?.label || `${range} Days`}</span>
               {' · '}Generated: {format(new Date(), 'MMMM d, yyyy h:mm a')}
@@ -738,7 +738,7 @@ export default function ReportsPage() {
 
         {/* Report footer — visible in PDF */}
         <div className="border-t border-gray-100 pt-4 flex items-center justify-between text-xs text-gray-400">
-          <p>Aluguinsan E-Government Assistance System</p>
+          <p>Aloguinsan E-Government Assistance System</p>
           <p>Generated on {format(new Date(), 'MMMM d, yyyy')} at {format(new Date(), 'h:mm a')}</p>
         </div>
 

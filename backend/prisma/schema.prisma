@@ -2,7 +2,7 @@
 // schema.prisma
 //
 // Prisma schema for the eGov municipal service desk application of
-// Aluguinsan, Cebu. Defines the MySQL database structure covering citizens
+// Aloguinsan, Cebu. Defines the MySQL database structure covering citizens
 // (Users), government staff (Servants), municipal departments, support
 // tickets, messaging, file attachments, notifications, resident feedback,
 // public announcements, and the public-directory of officials/services.

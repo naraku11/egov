@@ -2,7 +2,7 @@
  * AnnouncementsPage.jsx
  *
  * Public-facing page that displays official announcements from the Municipality
- * of Aluguinsan.  Citizens can read and search/filter announcements; admins
+ * of Aloguinsan.  Citizens can read and search/filter announcements; admins
  * additionally have inline controls to create, edit, and delete entries.
  *
  * Features:
@@ -264,7 +264,7 @@ export default function AnnouncementsPage() {
               <Megaphone className="w-6 h-6 text-amber-500" />
               Announcements
             </h1>
-            <p className="text-gray-500 text-sm mt-0.5">Official notices from the Municipality of Aluguinsan</p>
+            <p className="text-gray-500 text-sm mt-0.5">Official notices from the Municipality of Aloguinsan</p>
           </div>
           {isAdmin && (
             <button

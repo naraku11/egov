@@ -80,7 +80,7 @@ const classifyWithClaude = async (text, departments) => {
     }],
     messages: [{
       role: 'user',
-      content: `You are classifying municipal government concerns for the Municipality of Aluguinsan, Cebu, Philippines.
+      content: `You are classifying municipal government concerns for the Municipality of Aloguinsan, Cebu, Philippines.
 
 Available departments:
 ${deptList}

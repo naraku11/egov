@@ -150,7 +150,7 @@ function DirectoryEntryModal({ entry, onClose, onSaved }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input type="email" className="input-field" placeholder="official@aluguinsan.gov.ph" value={form.email} onChange={set('email')} />
+              <input type="email" className="input-field" placeholder="official@aloguinsan.gov.ph" value={form.email} onChange={set('email')} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Office Hours</label>

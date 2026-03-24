@@ -1,9 +1,9 @@
 # E-Government Assistance System
-### Municipality of Aluguinsan, Cebu
+### Municipality of Aloguinsan, Cebu
 
 AI-powered citizen concern management system that matches residents with the appropriate public servants — fast, transparent, and multilingual.
 
-**Live:** [aluguinsan-egov.online](https://aluguinsan-egov.online)
+**Live:** [aloguinsan-egov.online](https://aloguinsan-egov.online)
 
 ---
 
@@ -34,9 +34,9 @@ AI-powered citizen concern management system that matches residents with the app
 
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | admin@aluguinsan.gov.ph | admin123 |
+| Admin | admin@aloguinsan.gov.ph | admin123 |
 | Resident | juan.delacruz@example.com | resident123 |
-| Servant | maria.santos@aluguinsan.gov.ph | servant123 |
+| Servant | maria.santos@aloguinsan.gov.ph | servant123 |
 
 > Citizens require OTP verification after login. Admin and servants log in directly.
 
@@ -77,7 +77,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 # Server
 NODE_ENV=production
 PORT=5000
-CLIENT_URL=https://aluguinsan-egov.online
+CLIENT_URL=https://aloguinsan-egov.online
 
 # File Uploads
 UPLOAD_DIR=./uploads
@@ -87,9 +87,9 @@ MAX_FILE_SIZE_MB=10
 SMTP_HOST=smtp.hostinger.com
 SMTP_PORT=465
 SMTP_SECURE=true
-SMTP_USER=info@aluguinsan-egov.online
+SMTP_USER=info@aloguinsan-egov.online
 SMTP_PASS=your_email_password
-EMAIL_FROM=info@aluguinsan-egov.online
+EMAIL_FROM=info@aloguinsan-egov.online
 ```
 
 > **Note:** Place your `firebase-service-account.json` in the backend root for Firebase Phone Auth.
@@ -575,4 +575,4 @@ egov/
 
 ---
 
-*Municipality of Aluguinsan, Province of Cebu, Philippines*
+*Municipality of Aloguinsan, Province of Cebu, Philippines*

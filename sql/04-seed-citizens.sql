@@ -1,5 +1,5 @@
 -- =============================================================================
--- E-Government Assistance System — Municipality of Aluguinsan, Cebu
+-- E-Government Assistance System — Municipality of Aloguinsan, Cebu
 -- FILE 4: Citizens / Residents (run after 01-schema.sql)
 -- =============================================================================
 -- Password for all: resident123

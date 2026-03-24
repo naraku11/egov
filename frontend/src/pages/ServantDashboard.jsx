@@ -1,7 +1,7 @@
 /**
  * @file ServantDashboard.jsx
  * @description Work dashboard for public servants (government staff) of the
- * Aluguinsan E-Gov Portal.
+ * Aloguinsan E-Gov Portal.
  *
  * Layout: a two-panel split view — a scrollable ticket list on the left and a
  * full ticket detail / messaging panel on the right. On mobile screens only

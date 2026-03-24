@@ -115,7 +115,7 @@ const SELF_HELP = [
     title: "Mayor's Office",
     desc: 'General inquiries, clearances, certificates, and documents',
     icon: '🏛️',
-    contacts: ['(032) 473-XXXX', 'mayors@aluguinsan.gov.ph'],
+    contacts: ['(032) 473-XXXX', 'mayors@aloguinsan.gov.ph'],
   },
   {
     title: 'Municipal Engineering',

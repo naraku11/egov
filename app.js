@@ -1,6 +1,6 @@
 /**
  * @file app.js
- * @description Root application entry point for the E-Gov Aluguinsan platform.
+ * @description Root application entry point for the E-Gov Aloguinsan platform.
  *
  * Hostinger's Node.js runtime expects a CommonJS-compatible root file.
  * Because the entire backend is written as ES Modules (ESM), this file uses
