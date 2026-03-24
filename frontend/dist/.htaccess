@@ -1,0 +1,9 @@
+RewriteEngine On
+
+# Block access to .builds directory
+RewriteRule ^\.builds - [F,L]
+
+# SPA fallback — route all non-file requests to index.html
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.html [L]

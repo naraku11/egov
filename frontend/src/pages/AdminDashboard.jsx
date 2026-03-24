@@ -39,7 +39,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
-import Navbar from '../components/Navbar.jsx';
+import SidebarLayout from '../components/SidebarLayout.jsx';
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx';
 
 /**
@@ -754,13 +754,12 @@ export default function AdminDashboard() {
   // ── Loading / empty guard ───────────────────────────────────────────────────
   if (loading || !stats) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
+      <SidebarLayout>
         {/* Full-page spinner shown only during the initial data load */}
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary-600 border-t-transparent" />
         </div>
-      </div>
+      </SidebarLayout>
     );
   }
 
@@ -799,8 +798,7 @@ export default function AdminDashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
+    <SidebarLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
         {/* ── Page Header ──────────────────────────────────────────────────────
@@ -1610,6 +1608,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-    </div>
+    </SidebarLayout>
   );
 }

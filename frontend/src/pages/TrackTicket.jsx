@@ -30,7 +30,7 @@ import api from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useLanguage } from '../contexts/LanguageContext.jsx';
 import { useSocket } from '../contexts/SocketContext.jsx';
-import Navbar from '../components/Navbar.jsx';
+import SidebarLayout from '../components/SidebarLayout.jsx';
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx';
 
 /**
@@ -235,9 +235,7 @@ export default function TrackTicket() {
   const userInitial = user?.name?.charAt(0).toUpperCase() || 'M';
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
-
+    <SidebarLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex gap-4 lg:gap-6 min-h-[500px] lg:h-[calc(100vh-7rem)]">
 
@@ -254,15 +252,7 @@ export default function TrackTicket() {
                   value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
               </div>
 
-              {/* Status filter dropdown */}
-              <select className="input-field text-sm mb-4" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                <option value="">All Status</option>
-                <option value="PENDING">Pending</option>
-                <option value="ASSIGNED">Assigned</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="RESOLVED">Resolved</option>
-                <option value="ESCALATED">Escalated</option>
-              </select>
+              {/* Status filter removed — citizens see all tickets */}
 
               {/* Scrollable ticket list */}
               <div className="flex-1 overflow-y-auto space-y-2">
@@ -320,8 +310,8 @@ export default function TrackTicket() {
                 <div className="flex-shrink-0 px-5 py-4 border-b border-gray-100 bg-white">
                   <div className="flex items-start gap-3">
                     {/* Back button — only visible on mobile */}
-                    <button onClick={() => setSelectedTicket(null)} className="lg:hidden mt-0.5 p-1.5 hover:bg-gray-100 rounded-lg flex-shrink-0">
-                      <ArrowLeft className="w-4 h-4" />
+                    <button onClick={() => setSelectedTicket(null)} className="lg:hidden p-2.5 -ml-1 hover:bg-gray-100 rounded-lg flex-shrink-0 touch-target">
+                      <ArrowLeft className="w-5 h-5" />
                     </button>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -425,7 +415,7 @@ export default function TrackTicket() {
                             </div>
                           )}
 
-                          <div className={`max-w-[72%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                          <div className={`max-w-[80%] sm:max-w-[72%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                             {/* Sender name label — only shown for servant messages */}
                             {!isMe && (
                               <p className="text-xs text-gray-500 mb-1 px-1">{msg.senderName}</p>
@@ -455,7 +445,7 @@ export default function TrackTicket() {
                                         <a key={idx} href={fileUrl} target="_blank" rel="noopener noreferrer"
                                           className={`flex items-center gap-2 text-xs ${isMe ? 'text-white/90 hover:text-white' : 'text-primary-600 hover:text-primary-700'}`}>
                                           <Download className="w-3.5 h-3.5 flex-shrink-0" />
-                                          <span className="underline truncate max-w-[150px]">{att.fileName}</span>
+                                          <span className="underline truncate max-w-[120px] sm:max-w-[180px]">{att.fileName}</span>
                                           <span className="opacity-60">({(att.fileSize / 1024).toFixed(0)} KB)</span>
                                         </a>
                                       );
@@ -485,10 +475,10 @@ export default function TrackTicket() {
                     <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 mt-2">
                       <p className="font-semibold text-yellow-900 mb-3">{t('rateService')}</p>
                       {/* Star rating buttons */}
-                      <div className="flex gap-1 mb-3">
+                      <div className="flex gap-1.5 mb-3">
                         {[1,2,3,4,5].map(s => (
-                          <button key={s} onClick={() => setRating(s)} className="transition-transform hover:scale-110">
-                            <Star className={`w-7 h-7 ${s <= rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />
+                          <button key={s} onClick={() => setRating(s)} className="p-1.5 transition-transform hover:scale-110 active:scale-95 touch-target">
+                            <Star className={`w-8 h-8 ${s <= rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />
                           </button>
                         ))}
                       </div>
@@ -518,7 +508,7 @@ export default function TrackTicket() {
 
                 {/* ── Message input bar — hidden for resolved/closed tickets ── */}
                 {!['RESOLVED', 'CLOSED'].includes(selectedTicket.status) && (
-                  <div className="flex-shrink-0 px-4 py-3 border-t border-gray-100 bg-white space-y-2">
+                  <div className="flex-shrink-0 px-4 py-3 border-t border-gray-100 bg-white space-y-2 safe-bottom">
                     {/* File preview strip */}
                     {msgFiles.length > 0 && (
                       <div className="flex gap-2 flex-wrap">
@@ -596,6 +586,6 @@ export default function TrackTicket() {
           )}
         </div>
       </div>
-    </div>
+    </SidebarLayout>
   );
 }

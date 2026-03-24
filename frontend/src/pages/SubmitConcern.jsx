@@ -21,7 +21,7 @@ import { Upload, X, Bot, MapPin, ChevronRight, ChevronLeft, CheckCircle, Mic, Mi
 import toast from 'react-hot-toast';
 import api from '../api/client.js';
 import { useLanguage } from '../contexts/LanguageContext.jsx';
-import Navbar from '../components/Navbar.jsx';
+import SidebarLayout from '../components/SidebarLayout.jsx';
 import { concernCategories } from '../i18n/translations.js';
 
 /** Static list of priority levels with display metadata. */
@@ -239,8 +239,7 @@ export default function SubmitConcern() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
+    <SidebarLayout>
       <div className="max-w-2xl mx-auto px-4 py-8">
         {/* ── Progress indicator ── */}
         <div className="mb-8">
@@ -281,13 +280,13 @@ export default function SubmitConcern() {
               {/* Category selector — rendered as a button grid */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">{t('category')} *</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {concernCategories.map(cat => (
                     <button
                       key={cat.value}
                       type="button"
                       onClick={() => setForm(f => ({ ...f, category: cat.value }))}
-                      className={`p-3 rounded-lg border text-left text-sm transition-all ${
+                      className={`p-3 rounded-lg border text-left text-sm transition-all active:scale-[0.98] ${
                         form.category === cat.value
                           ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium'
                           : 'border-gray-200 text-gray-700 hover:border-gray-300 active:bg-gray-50'
@@ -328,13 +327,13 @@ export default function SubmitConcern() {
               {/* Priority selector */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
-                <div className="flex gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {PRIORITY_OPTIONS.map(opt => (
                     <button
                       key={opt.value}
                       type="button"
                       onClick={() => setForm(f => ({ ...f, priority: opt.value }))}
-                      className={`flex-1 p-3 rounded-lg border-2 text-center transition-all ${
+                      className={`p-3 rounded-lg border-2 text-center transition-all active:scale-[0.98] ${
                         form.priority === opt.value
                           ? `border-current bg-opacity-10 ${opt.color} font-semibold`
                           : 'border-gray-200 text-gray-600 hover:border-gray-300 active:bg-gray-50'
@@ -538,6 +537,6 @@ export default function SubmitConcern() {
           </div>
         </div>
       </div>
-    </div>
+    </SidebarLayout>
   );
 }

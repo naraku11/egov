@@ -64,10 +64,10 @@ export default function LandingPage() {
           - A decorative card on desktop illustrating the ticket lifecycle
       ──────────────────────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden bg-gradient-to-br from-primary-900 via-primary-800 to-primary-700 text-white">
-        {/* Decorative blurred circles — purely visual, no interactive purpose */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-20 left-10 w-72 h-72 bg-white rounded-full blur-3xl" />
-          <div className="absolute bottom-10 right-20 w-96 h-96 bg-blue-300 rounded-full blur-3xl" />
+        {/* Decorative blurred circles — hidden on low-power devices via prefers-reduced-motion */}
+        <div className="absolute inset-0 opacity-10 hidden sm:block motion-reduce:hidden">
+          <div className="absolute top-20 left-10 w-72 h-72 bg-white rounded-full blur-3xl will-change-transform" />
+          <div className="absolute bottom-10 right-20 w-96 h-96 bg-blue-300 rounded-full blur-3xl will-change-transform" />
         </div>
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-28">

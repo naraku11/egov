@@ -197,7 +197,10 @@ export const register = async (req, res, next) => {
     // Generate a temporary pending ID (not a real DB id)
     const pendingId = 'pending_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
-    const pendingUser = { name, email: email || null, phone: phone || null, password: hashedPassword, barangay, address: address || null };
+    // Build ID photo URL if one was uploaded via multer
+    const idPhotoUrl = req.file ? `/uploads/ids/${req.file.filename}` : null;
+
+    const pendingUser = { name, email: email || null, phone: phone || null, password: hashedPassword, barangay, address: address || null, idPhotoUrl };
 
     // Generate OTP and store pending registration data alongside it
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -751,6 +754,7 @@ export const verifyAuthOtp = async (req, res, next) => {
           password: p.password,
           barangay: p.barangay,
           address: p.address,
+          idPhotoUrl: p.idPhotoUrl || null,
           isVerified: true,
         },
       });
@@ -977,6 +981,7 @@ export const verifyPhoneOtp = async (req, res, next) => {
         data: {
           name: p.name, email: p.email, phone: p.phone,
           password: p.password, barangay: p.barangay, address: p.address,
+          idPhotoUrl: p.idPhotoUrl || null,
           isVerified: true,
         },
       });

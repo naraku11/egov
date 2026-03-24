@@ -32,6 +32,8 @@ const AdminDashboard    = lazy(() => import('./pages/AdminDashboard.jsx'));
 const AnnouncementsPage = lazy(() => import('./pages/AnnouncementsPage.jsx'));
 const DirectoryPage     = lazy(() => import('./pages/DirectoryPage.jsx'));
 const ReportsPage       = lazy(() => import('./pages/ReportsPage.jsx'));
+const FaqPage           = lazy(() => import('./pages/FaqPage.jsx'));
+const TermsPage         = lazy(() => import('./pages/TermsPage.jsx'));
 
 /**
  * Full-screen centered loading indicator shown while the auth state is being
@@ -114,6 +116,10 @@ const AppRoutes = () => {
       {/* Shared routes (any authenticated user) */}
       <Route path="/announcements" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
       <Route path="/directory"     element={<ProtectedRoute><DirectoryPage /></ProtectedRoute>} />
+      <Route path="/faq"           element={<FaqPage />} />
+
+      {/* Public pages */}
+      <Route path="/terms" element={<TermsPage />} />
 
       {/* Servant routes */}
       <Route path="/servant" element={<ProtectedRoute requireServant><ServantDashboard /></ProtectedRoute>} />

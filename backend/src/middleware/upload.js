@@ -183,3 +183,23 @@ export const avatarUpload = multer({
   fileFilter: avatarFilter,
   limits: { fileSize: 2 * 1024 * 1024 }, // 2 MB max
 });
+
+// ── ID photo uploads ──────────────────────────────────────────────────────
+
+const idStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(UPLOAD_DIR, 'ids');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, unique + path.extname(file.originalname).toLowerCase());
+  },
+});
+
+export const idUpload = multer({
+  storage: idStorage,
+  fileFilter: avatarFilter, // reuse image-only filter
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB max for ID photos
+});

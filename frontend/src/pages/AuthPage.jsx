@@ -24,9 +24,9 @@
  * drop the user on the correct form automatically.
  */
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { Eye, EyeOff, Phone, Mail, Lock, User, MapPin, ArrowLeft, KeyRound, Smartphone, Shield, FileText, MessageSquare } from 'lucide-react';
+import { Eye, EyeOff, Phone, Mail, Lock, User, MapPin, ArrowLeft, KeyRound, Smartphone, Shield, FileText, MessageSquare, Camera, CheckCircle, AlertTriangle, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
@@ -68,6 +68,25 @@ export default function AuthPage() {
 
   // ── Registration form state ─────────────────────────────────────────────────
   const [regData, setRegData] = useState({ name: '', email: '', phone: '', password: '', confirmPassword: '', barangay: '', address: '' });
+  const [idPhoto, setIdPhoto] = useState(null);
+  const [idPreview, setIdPreview] = useState(null);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [idVerification, setIdVerification] = useState(null); // null | { isValid, idType, nameOnId, confidence, reason }
+  const [idVerifying, setIdVerifying] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+
+  // Cleanup camera stream on unmount to prevent battery drain / camera indicator
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
 
   // ── Auth OTP verification state (for citizens after login/register) ────────
   /** User ID returned by backend after credentials are validated */
@@ -326,6 +345,99 @@ export default function AuthPage() {
    *
    * @param {React.FormEvent<HTMLFormElement>} e - Form submit event.
    */
+  // ── Camera capture for ID photo ────────────────────────────────────────────
+  const startCamera = async () => {
+    // Check API availability first
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error('Camera not supported on this browser. Please upload a file instead.');
+      return;
+    }
+    try {
+      // Try rear camera first, fall back to any camera (iOS/desktop may not have environment)
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+      streamRef.current = stream;
+      setCameraOpen(true);
+      // Wait for the video element to render, then attach stream
+      requestAnimationFrame(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => videoRef.current?.play().catch(() => {});
+        }
+      });
+    } catch (err) {
+      if (err.name === 'NotAllowedError') {
+        toast.error('Camera permission denied. Check your browser settings or upload a file instead.');
+      } else {
+        toast.error('Could not access camera. Please upload a file instead.');
+      }
+    }
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    // Ensure video has loaded frames before capturing
+    if (!video.videoWidth || !video.videoHeight) {
+      toast.error('Camera not ready yet. Please wait a moment and try again.');
+      return;
+    }
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const file = new File([blob], `id-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      setIdPhoto(file);
+      setIdPreview(URL.createObjectURL(blob));
+      setIdVerification(null);
+      stopCamera();
+    }, 'image/jpeg', 0.85);
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    setCameraOpen(false);
+  };
+
+  // ── ID Verification via API ───────────────────────────────────────────────
+  const verifyId = async () => {
+    if (!idPhoto) return toast.error('Please upload or capture an ID photo first');
+    if (!regData.name) return toast.error('Please enter your name first so we can verify it against the ID');
+    setIdVerifying(true);
+    setIdVerification(null);
+    try {
+      const formData = new FormData();
+      formData.append('idPhoto', idPhoto);
+      formData.append('name', regData.name);
+      const { data } = await api.post('/auth/verify-id', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setIdVerification(data);
+      if (data.isValid) {
+        toast.success(`ID verified: ${data.idType} (${data.confidence}% confidence)`);
+      } else {
+        toast.error(data.reason || 'ID verification failed. Please upload a clear photo of a valid government ID.');
+      }
+    } catch (err) {
+      toast.error('Verification service error. You can proceed and your ID will be reviewed manually.');
+      setIdVerification({ isValid: true, needsManualReview: true, reason: 'Service unavailable — manual review required.' });
+    } finally {
+      setIdVerifying(false);
+    }
+  };
+
   const handleRegister = async (e) => {
     e.preventDefault();
     // Client-side validation before hitting the API
@@ -333,15 +445,23 @@ export default function AuthPage() {
       return toast.error('Passwords do not match');
     }
     if (!regData.barangay) return toast.error('Please select your barangay');
+    if (!idPhoto) return toast.error('Please upload a valid ID photo for verification');
+    if (!idVerification?.isValid) return toast.error('Please verify your ID first by clicking the "Verify ID" button');
+    if (!agreedToTerms) return toast.error('Please agree to the Terms and Conditions');
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/register', {
-        name: regData.name,
-        email: regData.email || undefined,       // omit if empty
-        phone: regData.phone || undefined,       // omit if empty
-        password: regData.password,
-        barangay: regData.barangay,
-        address: regData.address || undefined,   // omit if empty
+      // Use FormData to send the ID photo file along with registration fields
+      const formData = new FormData();
+      formData.append('name', regData.name);
+      if (regData.email) formData.append('email', regData.email);
+      if (regData.phone) formData.append('phone', regData.phone);
+      formData.append('password', regData.password);
+      formData.append('barangay', regData.barangay);
+      if (regData.address) formData.append('address', regData.address);
+      formData.append('idPhoto', idPhoto);
+
+      const { data } = await api.post('/auth/register', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
 
       // Citizens must verify OTP before accessing the system
@@ -1113,7 +1233,137 @@ export default function AuthPage() {
                     </div>
                   </div>
 
-                  <button type="submit" disabled={loading} className="btn-primary w-full py-3 text-sm font-semibold shadow-lg shadow-primary-600/25 hover:shadow-primary-600/40 transition-all">
+                  {/* Valid ID Photo Upload + Camera Capture + Verification */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Valid ID Photo <span className="text-red-400">*</span></label>
+                    <p className="text-xs text-gray-500 mb-2">Upload or capture a clear photo of any valid government-issued ID for AI-powered identity verification.</p>
+
+                    {/* Camera view */}
+                    {cameraOpen && (
+                      <div className="relative mb-3 rounded-xl overflow-hidden bg-black">
+                        <video ref={videoRef} autoPlay playsInline muted
+                          className="w-full aspect-[4/3] object-cover"
+                          style={{ WebkitTransform: 'translateZ(0)' }} />
+                        <canvas ref={canvasRef} className="hidden" />
+                        <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-3 px-4">
+                          <button type="button" onClick={capturePhoto}
+                            className="px-5 py-3 bg-white text-gray-900 rounded-full text-sm font-semibold shadow-lg hover:bg-gray-100 transition-colors flex items-center gap-2 touch-target">
+                            <Camera className="w-4 h-4" /> Capture
+                          </button>
+                          <button type="button" onClick={stopCamera}
+                            className="px-5 py-3 bg-red-500 text-white rounded-full text-sm font-medium shadow-lg hover:bg-red-600 transition-colors touch-target">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ID preview or upload area */}
+                    {!cameraOpen && (
+                      <div className="relative">
+                        {idPreview ? (
+                          <div className={`relative border-2 rounded-xl overflow-hidden bg-gray-50 ${
+                            idVerification?.isValid ? 'border-green-300' : idVerification && !idVerification.isValid ? 'border-red-300' : 'border-primary-200'
+                          }`}>
+                            <img src={idPreview} alt="ID Preview" className="w-full max-h-52 object-contain" />
+                            <button type="button" onClick={() => { setIdPhoto(null); setIdPreview(null); setIdVerification(null); }}
+                              className="absolute top-2 right-2 w-10 h-10 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors shadow-lg touch-target">
+                              <X className="w-5 h-5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                            {/* Upload option */}
+                            <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl py-6 cursor-pointer hover:border-primary-400 hover:bg-primary-50/30 transition-colors active:bg-primary-50/50">
+                              <Shield className="w-7 h-7 text-gray-400 mb-1.5" />
+                              <span className="text-xs font-medium text-gray-600">Upload File</span>
+                              <span className="text-[10px] text-gray-400 mt-0.5">JPG, PNG — max 5MB</span>
+                              <input type="file" accept="image/jpeg,image/png,image/jpg,image/webp" className="hidden"
+                                onChange={e => {
+                                  const file = e.target.files[0];
+                                  if (!file) return;
+                                  if (file.size > 5 * 1024 * 1024) { toast.error('ID photo must be under 5MB'); return; }
+                                  setIdPhoto(file);
+                                  setIdPreview(URL.createObjectURL(file));
+                                  setIdVerification(null);
+                                }} />
+                            </label>
+                            {/* Camera option */}
+                            <button type="button" onClick={startCamera}
+                              className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl py-6 hover:border-primary-400 hover:bg-primary-50/30 transition-colors active:bg-primary-50/50">
+                              <Camera className="w-7 h-7 text-gray-400 mb-1.5" />
+                              <span className="text-xs font-medium text-gray-600">Use Camera</span>
+                              <span className="text-[10px] text-gray-400 mt-0.5">Capture directly</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Verify ID button */}
+                    {idPhoto && !idVerification?.isValid && (
+                      <button type="button" onClick={verifyId} disabled={idVerifying}
+                        className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-sm font-semibold hover:bg-amber-100 active:bg-amber-200 transition-colors disabled:opacity-60">
+                        {idVerifying ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                            Verifying ID with AI...
+                          </>
+                        ) : (
+                          <>
+                            <Shield className="w-4 h-4" />
+                            Verify ID
+                          </>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Verification result */}
+                    {idVerification && (
+                      <div className={`mt-3 p-3 rounded-xl text-sm ${
+                        idVerification.isValid
+                          ? 'bg-green-50 border border-green-200'
+                          : 'bg-red-50 border border-red-200'
+                      }`}>
+                        <div className="flex items-start gap-2">
+                          {idVerification.isValid ? (
+                            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                          ) : (
+                            <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                          )}
+                          <div>
+                            <p className={`font-semibold ${idVerification.isValid ? 'text-green-800' : 'text-red-800'}`}>
+                              {idVerification.isValid ? 'ID Verified' : 'Verification Failed'}
+                            </p>
+                            {idVerification.idType && idVerification.idType !== 'unknown' && (
+                              <p className="text-xs mt-0.5"><span className="font-medium">Type:</span> {idVerification.idType}</p>
+                            )}
+                            {idVerification.nameOnId && (
+                              <p className="text-xs mt-0.5"><span className="font-medium">Name on ID:</span> {idVerification.nameOnId}</p>
+                            )}
+                            {idVerification.confidence > 0 && (
+                              <p className="text-xs mt-0.5"><span className="font-medium">Confidence:</span> {idVerification.confidence}%</p>
+                            )}
+                            <p className="text-xs mt-1 opacity-80">{idVerification.reason}</p>
+                            {idVerification.needsManualReview && (
+                              <p className="text-xs mt-1 font-medium text-amber-700">Your ID will be reviewed manually by an admin.</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Terms and Agreement checkbox */}
+                  <label className="flex items-start gap-3 cursor-pointer group py-1">
+                    <input type="checkbox" checked={agreedToTerms} onChange={e => setAgreedToTerms(e.target.checked)}
+                      className="mt-0.5 w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 flex-shrink-0" />
+                    <span className="text-xs text-gray-600 leading-relaxed">
+                      I agree to the <button type="button" onClick={() => window.open('/terms', '_blank')} className="text-primary-600 font-semibold hover:underline">Terms and Conditions</button> and <button type="button" onClick={() => window.open('/terms', '_blank')} className="text-primary-600 font-semibold hover:underline">Privacy Policy</button> of the Aluguinsan E-Gov Portal. I confirm that the information and ID photo provided are accurate.
+                    </span>
+                  </label>
+
+                  <button type="submit" disabled={loading || !agreedToTerms} className="btn-primary w-full py-3 text-sm font-semibold shadow-lg shadow-primary-600/25 hover:shadow-primary-600/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                     {loading ? t('loading') : t('createAccount')}
                   </button>
                   <p className="text-center text-sm text-gray-500">

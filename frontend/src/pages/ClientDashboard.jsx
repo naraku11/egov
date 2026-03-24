@@ -23,7 +23,7 @@ import { format } from 'date-fns';
 import api from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useLanguage } from '../contexts/LanguageContext.jsx';
-import Navbar from '../components/Navbar.jsx';
+import SidebarLayout from '../components/SidebarLayout.jsx';
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx';
 
 /**
@@ -94,19 +94,16 @@ export default function ClientDashboard() {
   // ── Loading state ───────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        {/* Full-page centred spinner shown while API calls are in flight */}
+      <SidebarLayout>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary-600 border-t-transparent" />
         </div>
-      </div>
+      </SidebarLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
+    <SidebarLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
         {/* ── Page Header ────────────────────────────────────────────────────
@@ -122,6 +119,13 @@ export default function ClientDashboard() {
               Barangay {user?.barangay} · {format(new Date(), 'MMMM d, yyyy')}
             </p>
           </div>
+          <Link
+            to="/submit"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white font-semibold rounded-xl shadow-lg shadow-primary-600/25 transition-all text-sm"
+          >
+            <FileText className="w-5 h-5" />
+            {t('submitConcern')}
+          </Link>
         </div>
 
         {/* ── Summary Stat Cards ─────────────────────────────────────────────
@@ -278,6 +282,6 @@ export default function ClientDashboard() {
           </div>
         </div>
       </div>
-    </div>
+    </SidebarLayout>
   );
 }

@@ -20,7 +20,7 @@ import { Megaphone, AlertTriangle, Calendar, Info, Search, Plus, Pencil, Trash2,
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import api from '../api/client.js';
-import Navbar from '../components/Navbar.jsx';
+import SidebarLayout from '../components/SidebarLayout.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
 /**
@@ -254,8 +254,7 @@ export default function AnnouncementsPage() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
+    <SidebarLayout>
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
         {/* ── Page header with optional "New Announcement" button for admins ── */}
@@ -421,6 +420,6 @@ export default function AnnouncementsPage() {
           </div>
         </div>
       )}
-    </div>
+    </SidebarLayout>
   );
 }

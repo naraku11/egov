@@ -427,8 +427,7 @@ export const translations = {
 export const barangays = [
   'Angilan', 'Bojo', 'Bonbon', 'Esperanza', 'Kandingan',
   'Kantabogon', 'Kawasan', 'Olango', 'Poblacion', 'Punay',
-  'Remane', 'San Isidro', 'Sorsogon', 'Tuburan Norte',
-  'Tuburan Sur',
+  'Rosario', 'Saksak', 'Tampaan', 'Tuyokon', 'Zaragosa',
 ];
 
 /**

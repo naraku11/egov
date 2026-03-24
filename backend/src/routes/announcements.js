@@ -25,6 +25,7 @@
 
 import { Router } from 'express';
 import prisma from '../lib/prisma.js';
+import { getIO } from '../lib/socket.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 
 /** Dedicated Express router instance for all /announcements endpoints. */
@@ -142,6 +143,12 @@ router.post('/', authenticate, requireAdmin, async (req, res, next) => {
         createdById: req.user.id,               // track which admin created it
       },
     });
+
+    // Broadcast to all connected clients when published
+    if (publish) {
+      try { getIO().emit('announcement:new', announcement); } catch {}
+    }
+
     res.status(201).json(announcement);
   } catch (err) {
     next(err);
@@ -191,6 +198,12 @@ router.put('/:id', authenticate, requireAdmin, async (req, res, next) => {
       where: { id: req.params.id },
       data,
     });
+
+    // Broadcast when an announcement transitions to published
+    if (isPublished === true) {
+      try { getIO().emit('announcement:new', announcement); } catch {}
+    }
+
     res.json(announcement);
   } catch (err) {
     next(err);

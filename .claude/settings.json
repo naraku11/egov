@@ -8,7 +8,11 @@
       "Bash(grep -q \"^    $key:\" /f/Upload/Projects/deploy/egov/frontend/src/i18n/translations.js)",
       "Bash(echo \"✓ $key\")",
       "Bash(echo \"✗ MISSING: $key\")",
-      "Bash(npm list:*)"
+      "Bash(npm list:*)",
+      "Bash(node -e \":*)",
+      "Bash(grep -n \"className.*button.*w-[34].*h-[34]\\\\|className.*p-1.*w-[34].*h-[34]\" /f/Upload/Projects/deploy/egov/frontend/src/pages/*.jsx)",
+      "Bash(grep -E \"^/f/Upload/Projects/deploy/egov/backend/[^/]+\\(/[^/]+\\)?$\")",
+      "Bash(grep -E \"^/f/Upload/Projects/deploy/egov/frontend/[^/]+\\(/[^/]+\\)?$\")"
     ]
   }
 }

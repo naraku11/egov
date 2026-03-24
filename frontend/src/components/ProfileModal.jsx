@@ -206,22 +206,22 @@ export default function ProfileModal({ onClose }) {
   const avatarBg = isServant ? 'bg-green-600' : 'bg-primary-600';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[92vh] sm:max-h-[90vh] flex flex-col animate-fadeIn safe-bottom">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-gray-100 flex-shrink-0">
           <h2 className="font-semibold text-gray-900 flex items-center gap-2">
             <User className="w-4 h-4 text-primary-600" />
             Edit Profile
           </h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-            <X className="w-4 h-4 text-gray-500" />
+          <button onClick={onClose} className="p-2.5 -mr-1 hover:bg-gray-100 rounded-lg transition-colors touch-target">
+            <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
 
         {/* Scrollable body — prevents the modal from overflowing short viewports */}
-        <div className="overflow-y-auto flex-1">
+        <div className="overflow-y-auto overscroll-contain flex-1">
           <form id="profile-form" onSubmit={handleSubmit} className="p-6 space-y-4">
 
             {/* Avatar picker — clicking the circle triggers the hidden file input */}

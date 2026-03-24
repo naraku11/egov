@@ -39,7 +39,8 @@ import {
   verifyPhoneOtp,
 } from '../controllers/authController.js';
 import { authenticate } from '../middleware/auth.js';
-import { avatarUpload } from '../middleware/upload.js';
+import { avatarUpload, idUpload } from '../middleware/upload.js';
+import { verifyIdPhoto } from '../services/idVerifier.js';
 
 const router = Router();
 
@@ -47,8 +48,32 @@ const router = Router();
 // Public routes — no authentication required
 // ---------------------------------------------------------------------------
 
-/** Register a new resident account. */
-router.post('/register', register);
+/** Register a new resident account (accepts optional ID photo via multipart). */
+router.post('/register', idUpload.single('idPhoto'), register);
+
+/**
+ * POST /auth/verify-id
+ * Verify an uploaded ID photo using Claude Vision AI.
+ * Accepts a single image file and the registrant's name.
+ * Returns verification result (valid/invalid, ID type, name match, confidence).
+ */
+router.post('/verify-id', idUpload.single('idPhoto'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No ID photo uploaded' });
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name is required for verification' });
+
+    const filePath = req.file.path;
+    const result = await verifyIdPhoto(filePath, name);
+
+    // Clean up the temp file after verification (the real upload happens at registration)
+    try { const fs = await import('fs'); fs.default.unlinkSync(filePath); } catch {}
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
 
 /** Resident credential login (kept for backward compatibility). */
 router.post('/login', login);             // kept for backward-compat

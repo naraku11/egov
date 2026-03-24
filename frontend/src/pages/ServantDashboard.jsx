@@ -40,7 +40,7 @@ import api from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useLanguage } from '../contexts/LanguageContext.jsx';
 import { useSocket } from '../contexts/SocketContext.jsx';
-import Navbar from '../components/Navbar.jsx';
+import SidebarLayout from '../components/SidebarLayout.jsx';
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx';
 
 /**
@@ -339,8 +339,7 @@ export default function ServantDashboard() {
   const urgentCount = tickets.filter(t => t.priority === 'URGENT' && !['RESOLVED','CLOSED'].includes(t.status)).length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
+    <SidebarLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
         {/* ── Page Header ────────────────────────────────────────────────────
@@ -751,6 +750,6 @@ export default function ServantDashboard() {
           )}
         </div>
       </div>
-    </div>
+    </SidebarLayout>
   );
 }

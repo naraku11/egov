@@ -52,6 +52,9 @@ model User {
   // Display
   avatarUrl   String?   // URL to the user's profile picture (optional)
 
+  // Verification
+  idPhotoUrl  String?   // URL to the citizen's uploaded valid ID photo
+
   // Timestamps
   createdAt   DateTime  @default(now())  // When the account was created
   updatedAt   DateTime  @updatedAt       // Automatically updated on every write
