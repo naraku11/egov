@@ -477,6 +477,129 @@ function CitizenDeleteModal({ citizen, onClose, onConfirm, loading }) {
   );
 }
 
+/**
+ * DepartmentModal component.
+ *
+ * Modal dialog for creating a new department or editing an existing one.
+ * Supports: name, code, description, head, email, phone, color, keywords.
+ */
+function DepartmentModal({ department, onClose, onSaved }) {
+  const isEdit = !!department;
+  const [form, setForm] = useState({
+    name:        department?.name        || '',
+    code:        department?.code        || '',
+    description: department?.description || '',
+    head:        department?.head        || '',
+    email:       department?.email       || '',
+    phone:       department?.phone       || '',
+    color:       department?.color       || '#3B82F6',
+    keywords:    Array.isArray(department?.keywords) ? department.keywords.join(', ') : '',
+    isActive:    department?.isActive    ?? true,
+  });
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.name || !form.code) return toast.error('Name and code are required');
+    setLoading(true);
+    try {
+      const payload = {
+        ...form,
+        code: form.code.toUpperCase().replace(/\s+/g, '_'),
+        keywords: form.keywords ? form.keywords.split(',').map(k => k.trim()).filter(Boolean) : [],
+      };
+      if (isEdit) {
+        await api.put(`/departments/${department.id}`, payload);
+        toast.success('Department updated');
+      } else {
+        await api.post('/departments', payload);
+        toast.success('Department created');
+      }
+      onSaved();
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto animate-fadeIn" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-primary-600" />
+            {isEdit ? 'Edit Department' : 'Add Department'}
+          </h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Department Name *</label>
+            <input className="input-field" placeholder="e.g. Municipal Engineering Office" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+              <input className="input-field uppercase" placeholder="e.g. ENGINEERING" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+              <div className="flex items-center gap-2">
+                <input type="color" className="w-10 h-10 rounded-lg border border-gray-200 cursor-pointer p-0.5" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} />
+                <input className="input-field flex-1 font-mono text-sm" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Department Head</label>
+            <input className="input-field" placeholder="e.g. Engr. Juan Dela Cruz" value={form.head} onChange={e => setForm(f => ({ ...f, head: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <textarea className="input-field resize-none" rows={2} placeholder="Brief description of services..." value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input type="email" className="input-field" placeholder="dept@aloguinsan.gov.ph" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <input type="tel" className="input-field" placeholder="(032) 555-0000" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">AI Keywords</label>
+            <input className="input-field" placeholder="road, flood, infrastructure (comma-separated)" value={form.keywords} onChange={e => setForm(f => ({ ...f, keywords: e.target.value }))} />
+            <p className="text-xs text-gray-400 mt-1">Comma-separated keywords used by the AI classifier to route tickets to this department.</p>
+          </div>
+          {isEdit && (
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium text-gray-700">Status:</label>
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, isActive: !f.isActive }))}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  form.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                }`}
+              >
+                {form.isActive ? 'Active' : 'Inactive'}
+              </button>
+            </div>
+          )}
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+            <button type="submit" disabled={loading} className="btn-primary flex-1">
+              {loading ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Department'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /** Chart colour palette cycled across pie slices, bar cells, etc. */
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
 
@@ -484,7 +607,7 @@ const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'
 const STATUS_OPTIONS = ['ALL', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'ESCALATED'];
 
 /** Navigation tabs for the dashboard; order determines left-to-right display */
-const TABS = ['overview', 'tickets', 'servants', 'citizens', 'sla'];
+const TABS = ['overview', 'tickets', 'servants', 'citizens', 'departments', 'sla'];
 
 /**
  * AdminDashboard component.
@@ -560,6 +683,10 @@ export default function AdminDashboard() {
   /** Loading state for reactivation */
   const [reactivateLoading, setReactivateLoading] = useState(false);
 
+  /** Department object to edit, 'add' for new, or null when closed */
+  const [deptModal, setDeptModal] = useState(null);
+  /** Search query for the departments tab */
+  const [deptSearch, setDeptSearch] = useState('');
 
   // ── Refresh state ───────────────────────────────────────────────────────────
   /** True while a manual refresh is in flight (shows spinner on the Refresh button) */
@@ -621,6 +748,9 @@ export default function AdminDashboard() {
       } else if (targetTab === 'citizens') {
         const { data } = await api.get('/admin/users');
         setCitizens(data || []);
+      } else if (targetTab === 'departments') {
+        const { data } = await api.get('/departments');
+        setDepartments(data || []);
       } else if (targetTab === 'sla') {
         const { data } = await api.get('/admin/sla-breaches');
         setSlaBreaches(data || []);
@@ -1501,6 +1631,133 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* ── DEPARTMENTS TAB ───────────────────────────────────────────────────
+            Card grid of all departments with servant/ticket counts, edit action,
+            and add button.
+        ────────────────────────────────────────────────────────────────────── */}
+        {tab === 'departments' && (
+          <div className="space-y-4 animate-fadeIn">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-primary-600" />
+                Departments
+                <span className="bg-primary-100 text-primary-700 text-xs px-2 py-0.5 rounded-full font-medium">
+                  {departments.length}
+                </span>
+              </h3>
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search departments..."
+                    className="input-field pl-9 w-full sm:w-64"
+                    value={deptSearch}
+                    onChange={e => setDeptSearch(e.target.value)}
+                  />
+                </div>
+                <button onClick={() => setDeptModal('add')} className="btn-primary text-sm flex items-center gap-2 whitespace-nowrap">
+                  <Building2 className="w-4 h-4" />
+                  Add Department
+                </button>
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {departments
+                .filter(d => {
+                  if (!deptSearch) return true;
+                  const q = deptSearch.toLowerCase();
+                  return d.name?.toLowerCase().includes(q) ||
+                    d.code?.toLowerCase().includes(q) ||
+                    d.head?.toLowerCase().includes(q);
+                })
+                .map(dept => (
+                  <div key={dept.id} className={`card border ${dept.isActive !== false ? 'border-gray-100' : 'border-red-200 bg-red-50/30'}`}>
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm"
+                          style={{ backgroundColor: dept.color || '#3B82F6' }}
+                        >
+                          {dept.code?.charAt(0) || 'D'}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900 text-sm">{dept.name}</p>
+                          <p className="text-xs text-gray-400 font-mono">{dept.code}</p>
+                        </div>
+                      </div>
+                      {dept.isActive === false && (
+                        <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-100 text-red-700">Inactive</span>
+                      )}
+                    </div>
+
+                    {dept.description && (
+                      <p className="text-xs text-gray-500 mb-3 line-clamp-2">{dept.description}</p>
+                    )}
+
+                    <div className="space-y-1.5 text-xs text-gray-500 mb-3">
+                      {dept.head && (
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="w-3.5 h-3.5 text-gray-400" />
+                          <span>{dept.head}</span>
+                        </div>
+                      )}
+                      {dept.email && (
+                        <div className="flex items-center gap-2">
+                          <Mail className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="truncate">{dept.email}</span>
+                        </div>
+                      )}
+                      {dept.phone && (
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 text-gray-400" />
+                          <span>{dept.phone}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4 text-xs mb-3">
+                      <div className="flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-primary-500" />
+                        <span className="font-medium text-gray-700">{dept._count?.servants ?? 0}</span>
+                        <span className="text-gray-400">servants</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-primary-500" />
+                        <span className="font-medium text-gray-700">{dept._count?.tickets ?? 0}</span>
+                        <span className="text-gray-400">tickets</span>
+                      </div>
+                    </div>
+
+                    {Array.isArray(dept.keywords) && dept.keywords.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-3">
+                        {dept.keywords.slice(0, 5).map(kw => (
+                          <span key={kw} className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{kw}</span>
+                        ))}
+                        {dept.keywords.length > 5 && (
+                          <span className="text-xs text-gray-400">+{dept.keywords.length - 5} more</span>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 pt-3 border-t border-gray-100">
+                      <button
+                        onClick={() => setDeptModal(dept)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 active:bg-primary-200 rounded-lg transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Edit
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              {departments.length === 0 && (
+                <p className="col-span-3 text-center text-gray-400 py-10 text-sm">No departments found</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ── SLA BREACHES TAB ─────────────────────────────────────────────────
             List of tickets that have passed their SLA deadline without being
             resolved. Each entry shows the deadline timestamp and a relative
@@ -1597,6 +1854,15 @@ export default function AdminDashboard() {
           loading={citizenDeleteLoading}
           onClose={() => setDeletingCitizen(null)}
           onConfirm={handleDeleteCitizen}
+        />
+      )}
+
+      {/* Add / edit department modal */}
+      {deptModal && (
+        <DepartmentModal
+          department={deptModal === 'add' ? null : deptModal}
+          onClose={() => setDeptModal(null)}
+          onSaved={() => { setDeptModal(null); fetchTabData('departments'); }}
         />
       )}
 
