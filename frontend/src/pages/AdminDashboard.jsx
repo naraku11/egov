@@ -25,6 +25,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Users, FileText, CheckCircle, AlertTriangle, Star, TrendingUp,
   Building2, UserPlus, RefreshCw, X, Search, Filter, Clock,
@@ -606,8 +607,8 @@ const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'
 /** Status options available in the Tickets tab filter dropdown */
 const STATUS_OPTIONS = ['ALL', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'ESCALATED'];
 
-/** Navigation tabs for the dashboard; order determines left-to-right display */
-const TABS = ['overview', 'tickets', 'servants', 'citizens', 'departments', 'sla'];
+/** Navigation tabs displayed in the inline tab bar (servants/citizens/departments are in the sidebar) */
+const TABS = ['overview', 'tickets', 'sla'];
 
 /**
  * AdminDashboard component.
@@ -624,9 +625,17 @@ export default function AdminDashboard() {
   // Logged-in admin user (used for the greeting)
   const { user } = useAuth();
 
-  // ── Tab state ───────────────────────────────────────────────────────────────
-  /** Currently active tab: 'overview' | 'tickets' | 'servants' | 'sla' */
-  const [tab, setTab] = useState('overview');
+  // ── Tab state (synced with URL ?tab= param for sidebar navigation) ─────────
+  const [searchParams, setSearchParams] = useSearchParams();
+  const VALID_TABS = ['overview', 'tickets', 'servants', 'citizens', 'departments', 'sla'];
+  const tab = VALID_TABS.includes(searchParams.get('tab')) ? searchParams.get('tab') : 'overview';
+  const setTab = (t) => {
+    if (t === 'overview') {
+      setSearchParams({}, { replace: true });
+    } else {
+      setSearchParams({ tab: t }, { replace: true });
+    }
+  };
 
   // ── Data state ──────────────────────────────────────────────────────────────
   /** Aggregated system stats returned by GET /admin/stats */
@@ -713,6 +722,16 @@ export default function AdminDashboard() {
   }, []);
 
   /**
+   * Tab change effect — fetches data when the active tab changes (including
+   * via sidebar navigation which updates the URL ?tab= param).
+   */
+  useEffect(() => {
+    if (tab !== 'overview' && stats) {
+      fetchTabData(tab);
+    }
+  }, [tab]);
+
+  /**
    * Servants tab polling effect.
    * Starts a 30-second interval that re-fetches the servant list whenever the
    * Servants tab is active (so presence / workload data stays fresh), and
@@ -761,13 +780,13 @@ export default function AdminDashboard() {
   };
 
   /**
-   * Switches the active tab and immediately fetches that tab's data.
+   * Switches the active tab by updating the URL param.
+   * The tab-change effect handles fetching data automatically.
    *
    * @param {string} newTab - The tab identifier to switch to.
    */
   const loadTabData = (newTab) => {
     setTab(newTab);
-    fetchTabData(newTab);
   };
 
   /**

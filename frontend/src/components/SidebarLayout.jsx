@@ -20,6 +20,7 @@ import {
   Menu, X, Bell, LogOut, ChevronDown, ChevronLeft, Globe, LayoutDashboard,
   ClipboardList, ShieldCheck, Check, UserCog, Megaphone, BookOpen, BarChart2,
   FileText, HelpCircle, Search, Home, PlusCircle, FolderOpen, Scale,
+  Users, Building2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -195,15 +196,28 @@ export default function SidebarLayout({ children }) {
   const roleMeta = ROLE_META[role];
   const initials = getInitials(currentPerson?.name || '');
 
-  const isActive = (to) => location.pathname === to || location.pathname.startsWith(to + '/');
+  const isActive = (to) => {
+    // Handle sidebar items with query params (e.g. /admin?tab=servants)
+    if (to.includes('?')) {
+      return location.pathname + location.search === to;
+    }
+    // For /admin without query, only match when there's no tab param
+    if (to === '/admin') {
+      return location.pathname === '/admin' && !location.search;
+    }
+    return location.pathname === to || location.pathname.startsWith(to + '/');
+  };
 
   // Build nav items per role
   const navItems = isAdmin
     ? [
-        { to: '/admin',         icon: ShieldCheck,     label: 'Admin Panel' },
-        { to: '/announcements', icon: Megaphone,       label: 'Announcements' },
-        { to: '/directory',     icon: BookOpen,        label: 'Directory' },
-        { to: '/reports',       icon: BarChart2,       label: 'Reports' },
+        { to: '/admin',                  icon: ShieldCheck,     label: 'Admin Panel' },
+        { to: '/admin?tab=servants',     icon: ClipboardList,   label: 'Servants' },
+        { to: '/admin?tab=citizens',     icon: Users,           label: 'Citizens' },
+        { to: '/admin?tab=departments',  icon: Building2,       label: 'Departments' },
+        { to: '/announcements',          icon: Megaphone,       label: 'Announcements' },
+        { to: '/directory',              icon: BookOpen,        label: 'Directory' },
+        { to: '/reports',                icon: BarChart2,       label: 'Reports' },
       ]
     : isServant
     ? [
