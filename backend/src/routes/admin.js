@@ -177,7 +177,7 @@ router.get('/users', authenticate, requireAdmin, async (req, res, next) => {
   try {
     const users = await prisma.user.findMany({
       where: { role: 'CLIENT' },
-      select: { id: true, name: true, email: true, phone: true, barangay: true, role: true, createdAt: true, isVerified: true, _count: { select: { tickets: true } } },
+      select: { id: true, name: true, email: true, phone: true, barangay: true, role: true, createdAt: true, isVerified: true, idPhotoUrl: true, idStatus: true, _count: { select: { tickets: true } } },
       orderBy: { createdAt: 'desc' },
     });
     res.json(users);
@@ -501,6 +501,45 @@ router.patch('/users/:id/archive', authenticate, requireAdmin, async (req, res, 
       where: { id },
       data: { isVerified: !user.isVerified },
     });
+    const { password: _, ...result } = updated;
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /admin/users/:id/id-review
+// ---------------------------------------------------------------------------
+/**
+ * Approves or rejects a citizen's uploaded ID photo.
+ *
+ * Body: { action: 'approve' | 'reject' }
+ * - approve → sets idStatus to VERIFIED
+ * - reject  → sets idStatus to REJECTED
+ *
+ * @name PATCH /admin/users/:id/id-review
+ * @access Admin
+ */
+router.patch('/users/:id/id-review', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { action } = req.body;
+
+    if (!['approve', 'reject'].includes(action)) {
+      return res.status(400).json({ error: 'Action must be "approve" or "reject"' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user || user.role !== 'CLIENT') {
+      return res.status(404).json({ error: 'Citizen not found' });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: { idStatus: action === 'approve' ? 'VERIFIED' : 'REJECTED' },
+    });
+
     const { password: _, ...result } = updated;
     res.json(result);
   } catch (err) {

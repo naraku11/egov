@@ -20,6 +20,18 @@
   input, select, textarea {
     font-size: 16px;
   }
+
+  /* Hide native password reveal toggle in Edge/Chrome so our custom Eye button is the only one */
+  input[type="password"]::-ms-reveal,
+  input[type="password"]::-ms-clear {
+    display: none;
+  }
+  /* Chrome/Safari — hide credentials/autofill suggestion button overlap */
+  input::-webkit-credentials-auto-fill-button {
+    visibility: hidden;
+    position: absolute;
+    right: 0;
+  }
 }
 
 @layer components {

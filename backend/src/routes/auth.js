@@ -108,6 +108,69 @@ router.post('/firebase/verify-phone', verifyFirebasePhone);
 /** Verify phone via Firebase during login/register OTP flow. */
 router.post('/verify-phone-otp', verifyPhoneOtp);
 
+/**
+ * POST /auth/reupload-id
+ * Allows users with PENDING_REVIEW or REJECTED idStatus to reupload a new ID photo.
+ * Requires email/phone + password since the user cannot login yet.
+ * Updates idPhotoUrl and resets idStatus based on the new OCR result.
+ */
+router.post('/reupload-id', idUpload.single('idPhoto'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No ID photo uploaded' });
+
+    const { emailOrPhone, password, idNameMatch } = req.body;
+    if (!emailOrPhone || !password) {
+      return res.status(400).json({ error: 'Email/phone and password are required' });
+    }
+
+    const isEmail = emailOrPhone.includes('@');
+    const user = await (await import('../lib/prisma.js')).default.user.findFirst({
+      where: isEmail ? { email: emailOrPhone } : { phone: emailOrPhone },
+    });
+
+    if (!user || !user.password) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+
+    const bcryptMod = await import('bcryptjs');
+    const valid = await bcryptMod.default.compare(password, user.password);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (!['PENDING_REVIEW', 'REJECTED'].includes(user.idStatus)) {
+      return res.status(400).json({ error: 'ID reupload is not needed for this account' });
+    }
+
+    // Delete old ID photo if it exists
+    if (user.idPhotoUrl) {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const oldPath = path.default.join(process.cwd(), user.idPhotoUrl.replace(/^\//, ''));
+        if (fs.default.existsSync(oldPath)) fs.default.unlinkSync(oldPath);
+      } catch {}
+    }
+
+    const idPhotoUrl = `/uploads/ids/${req.file.filename}`;
+    const newIdStatus = idNameMatch === 'true' ? 'VERIFIED' : 'PENDING_REVIEW';
+
+    const prismaClient = (await import('../lib/prisma.js')).default;
+    await prismaClient.user.update({
+      where: { id: user.id },
+      data: { idPhotoUrl, idStatus: newIdStatus },
+    });
+
+    if (newIdStatus === 'VERIFIED') {
+      return res.json({ verified: true, message: 'ID verified successfully! You can now login.' });
+    }
+
+    res.json({ verified: false, message: 'New ID uploaded. It will be reviewed by admin.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Protected routes — valid JWT required (authenticate middleware)
 // ---------------------------------------------------------------------------

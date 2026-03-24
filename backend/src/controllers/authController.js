@@ -72,6 +72,32 @@ const validateEmail = async (email) => {
 };
 
 /**
+ * Validates password strength.
+ * Requirements: min 8 chars, at least 1 uppercase, 1 lowercase, 1 digit, 1 special character.
+ *
+ * @param {string} password
+ * @returns {{ valid: boolean, reason?: string }}
+ */
+const validatePassword = (password) => {
+  if (!password || password.length < 8) {
+    return { valid: false, reason: 'Password must be at least 8 characters long' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, reason: 'Password must contain at least one uppercase letter' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, reason: 'Password must contain at least one lowercase letter' };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, reason: 'Password must contain at least one number' };
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return { valid: false, reason: 'Password must contain at least one special character (!@#$%^&* etc.)' };
+  }
+  return { valid: true };
+};
+
+/**
  * Creates a signed JWT for the given entity.
  *
  * @param {string} id   - The database ID of the user or servant.
@@ -175,6 +201,14 @@ export const register = async (req, res, next) => {
       return res.status(400).json({ error: 'Email or phone is required' });
     }
 
+    // Validate password strength
+    if (password) {
+      const pwCheck = validatePassword(password);
+      if (!pwCheck.valid) {
+        return res.status(400).json({ error: pwCheck.reason });
+      }
+    }
+
     // Validate email is legitimate (format, not disposable, MX records exist)
     if (email) {
       const emailCheck = await validateEmail(email);
@@ -200,7 +234,13 @@ export const register = async (req, res, next) => {
     // Build ID photo URL if one was uploaded via multer
     const idPhotoUrl = req.file ? `/uploads/ids/${req.file.filename}` : null;
 
-    const pendingUser = { name, email: email || null, phone: phone || null, password: hashedPassword, barangay, address: address || null, idPhotoUrl };
+    // Determine ID status from client-side OCR result: 'VERIFIED' (name matched), 'PENDING_REVIEW' (blue result), or 'NONE'
+    const idNameMatch = req.body.idNameMatch;
+    const idStatus = idPhotoUrl
+      ? (idNameMatch === 'true' ? 'VERIFIED' : 'PENDING_REVIEW')
+      : 'NONE';
+
+    const pendingUser = { name, email: email || null, phone: phone || null, password: hashedPassword, barangay, address: address || null, idPhotoUrl, idStatus };
 
     // Generate OTP and store pending registration data alongside it
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -392,7 +432,8 @@ export const updateProfile = async (req, res, next) => {
       if (newPassword) {
         // Require current password before allowing a change
         if (!currentPassword) return res.status(400).json({ error: 'Current password is required to set a new one' });
-        if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+        const pwCheck = validatePassword(newPassword);
+        if (!pwCheck.valid) return res.status(400).json({ error: pwCheck.reason });
         const record = await prisma.servant.findUnique({ where: { id: req.servant.id } });
         const valid = await bcrypt.compare(currentPassword, record.password);
         if (!valid) return res.status(400).json({ error: 'Current password is incorrect' });
@@ -567,6 +608,22 @@ export const unifiedLogin = async (req, res, next) => {
           });
         }
 
+        // Block login for users with pending or rejected ID verification
+        if (user.idStatus === 'PENDING_REVIEW') {
+          return res.status(403).json({
+            error: 'Your ID is pending admin verification. Please wait for admin approval or reupload a clearer ID.',
+            code: 'ID_PENDING_REVIEW',
+            userId: user.id,
+          });
+        }
+        if (user.idStatus === 'REJECTED') {
+          return res.status(403).json({
+            error: 'Your ID was rejected. Please reupload a valid government ID.',
+            code: 'ID_REJECTED',
+            userId: user.id,
+          });
+        }
+
         // CLIENT users require OTP verification
         // Use the same channel they logged in with
         const { sentTo, phone } = await generateAndSendAuthOtp(user.id, user, 'login', {
@@ -676,8 +733,9 @@ export const resetPassword = async (req, res, next) => {
     if (!emailOrPhone || !code || !newPassword) {
       return res.status(400).json({ error: 'emailOrPhone, code, and newPassword are required' });
     }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    const pwCheck = validatePassword(newPassword);
+    if (!pwCheck.valid) {
+      return res.status(400).json({ error: pwCheck.reason });
     }
 
     // Validate the reset code against the in-memory store
@@ -755,10 +813,19 @@ export const verifyAuthOtp = async (req, res, next) => {
           barangay: p.barangay,
           address: p.address,
           idPhotoUrl: p.idPhotoUrl || null,
+          idStatus: p.idStatus || 'NONE',
           isVerified: true,
         },
       });
       if (user.email) sendWelcomeEmail(user.email, user.name);
+
+      // If ID is pending review, don't auto-login — inform the user
+      if (user.idStatus === 'PENDING_REVIEW') {
+        return res.json({
+          pendingReview: true,
+          message: 'Account created successfully! Your ID is under review by admin. You will be able to login once your ID is verified.',
+        });
+      }
     } else {
       // Login: user already exists in DB
       user = await prisma.user.findUnique({ where: { id: userId } });
@@ -982,10 +1049,20 @@ export const verifyPhoneOtp = async (req, res, next) => {
           name: p.name, email: p.email, phone: p.phone,
           password: p.password, barangay: p.barangay, address: p.address,
           idPhotoUrl: p.idPhotoUrl || null,
+          idStatus: p.idStatus || 'NONE',
           isVerified: true,
         },
       });
       if (user.email) sendWelcomeEmail(user.email, user.name);
+
+      // If ID is pending review, don't auto-login — inform the user
+      if (user.idStatus === 'PENDING_REVIEW') {
+        authOtpStore.delete(userId);
+        return res.json({
+          pendingReview: true,
+          message: 'Account created successfully! Your ID is under review by admin. You will be able to login once your ID is verified.',
+        });
+      }
     } else {
       // Login: user already exists
       user = await prisma.user.findUnique({ where: { id: userId } });

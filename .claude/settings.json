@@ -13,7 +13,12 @@
       "Bash(grep -n \"className.*button.*w-[34].*h-[34]\\\\|className.*p-1.*w-[34].*h-[34]\" /f/Upload/Projects/deploy/egov/frontend/src/pages/*.jsx)",
       "Bash(grep -E \"^/f/Upload/Projects/deploy/egov/backend/[^/]+\\(/[^/]+\\)?$\")",
       "Bash(grep -E \"^/f/Upload/Projects/deploy/egov/frontend/[^/]+\\(/[^/]+\\)?$\")",
-      "Bash(xargs sed:*)"
+      "Bash(xargs sed:*)",
+      "Bash(node -e \"const t = require\\(''tesseract.js''\\); console.log\\(''tesseract.js version:'', Object.keys\\(t\\)\\)\")",
+      "Bash(npm run:*)",
+      "Bash(node -e \"import\\(''''./src/routes/auth.js''''\\).then\\(\\(\\) => console.log\\(''''auth.js OK''''\\)\\).catch\\(e => console.error\\(e.message\\)\\)\")",
+      "Bash(node -e \"import\\(''''./src/controllers/authController.js''''\\).then\\(\\(\\) => console.log\\(''''authController.js OK''''\\)\\).catch\\(e => console.error\\(e.message\\)\\)\")",
+      "Bash(node -e \"import\\(''./src/controllers/authController.js''\\).then\\(\\(\\) => console.log\\(''OK''\\)\\).catch\\(e => console.error\\(e.message\\)\\)\")"
     ]
   }
 }

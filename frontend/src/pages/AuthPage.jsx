@@ -33,6 +33,7 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import { useLanguage } from '../contexts/LanguageContext.jsx';
 import { barangays } from '../i18n/translations.js';
 import { auth, RecaptchaVerifier, signInWithPhoneNumber } from '../lib/firebase.js';
+import { createWorker } from 'tesseract.js';
 
 /**
  * AuthPage component.
@@ -51,8 +52,11 @@ export default function AuthPage() {
   // Active tab: 'login' | 'register' | 'forgot'
   const [tab, setTab] = useState(searchParams.get('tab') || 'login');
 
-  // Toggle plain-text visibility for the login password field
+  // Toggle plain-text visibility for password fields
   const [showPassword, setShowPassword] = useState(false);
+  const [showRegPassword, setShowRegPassword] = useState(false);
+  const [showRegConfirm, setShowRegConfirm] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // Shared loading flag — covers all three form submission handlers
   const [loading, setLoading] = useState(false);
@@ -87,6 +91,15 @@ export default function AuthPage() {
       }
     };
   }, []);
+
+  // ── ID reupload state (for PENDING_REVIEW / REJECTED users) ────────────────
+  const [idBlockedStatus, setIdBlockedStatus] = useState(null); // 'ID_PENDING_REVIEW' | 'ID_REJECTED'
+  const [reuploadIdPhoto, setReuploadIdPhoto] = useState(null);
+  const [reuploadIdPreview, setReuploadIdPreview] = useState(null);
+  const [reuploadVerification, setReuploadVerification] = useState(null);
+  const [reuploadVerifying, setReuploadVerifying] = useState(false);
+  const [reuploadOcrProgress, setReuploadOcrProgress] = useState(0);
+  const [reuploadCredentials, setReuploadCredentials] = useState({ emailOrPhone: '', password: '' });
 
   // ── Auth OTP verification state (for citizens after login/register) ────────
   /** User ID returned by backend after credentials are validated */
@@ -283,7 +296,14 @@ export default function AuthPage() {
         navigate(data.user.role === 'ADMIN' ? '/admin' : '/dashboard');
       }
     } catch (err) {
-      toast.error(err.response?.data?.error || err.message);
+      const code = err.response?.data?.code;
+      if (code === 'ID_PENDING_REVIEW' || code === 'ID_REJECTED') {
+        setIdBlockedStatus(code);
+        setReuploadCredentials({ emailOrPhone: loginData.emailOrPhone, password: loginData.password });
+        setTab('id-blocked');
+      } else {
+        toast.error(err.response?.data?.error || err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -319,7 +339,11 @@ export default function AuthPage() {
    */
   const handleForgotReset = async (e) => {
     e.preventDefault();
-    if (resetNewPw.length < 6) return toast.error('Password must be at least 6 characters');
+    if (resetNewPw.length < 8) return toast.error('Password must be at least 8 characters');
+    if (!/[A-Z]/.test(resetNewPw)) return toast.error('Password must contain at least one uppercase letter');
+    if (!/[a-z]/.test(resetNewPw)) return toast.error('Password must contain at least one lowercase letter');
+    if (!/[0-9]/.test(resetNewPw)) return toast.error('Password must contain at least one number');
+    if (!/[^A-Za-z0-9]/.test(resetNewPw)) return toast.error('Password must contain at least one special character');
     if (resetNewPw !== resetConfirm) return toast.error('Passwords do not match');
     setLoading(true);
     try {
@@ -411,28 +435,28 @@ export default function AuthPage() {
     setCameraOpen(false);
   };
 
-  // ── Client-side ID Validation (auto-triggered, no AI) ──────────────────────
+  // ── Client-side ID Validation with OCR (Tesseract.js) ──────────────────────
   /**
-   * Validates the uploaded/captured ID photo locally:
-   *  - File type must be JPEG, PNG, or WebP
-   *  - File size must be between 50 KB and 5 MB
-   *  - Image dimensions must be at least 300×200 px
-   *  - Image must not be blank (checks pixel variance)
+   * Validates the uploaded/captured ID photo:
+   *  1. Basic checks: file type, size, image dimensions, not blank
+   *  2. OCR scan: extracts text from the ID using Tesseract.js
+   *  3. Name matching: checks if the registered name appears on the ID
    */
-  const validateIdLocally = useCallback((file) => {
+  const [ocrProgress, setOcrProgress] = useState(0);
+
+  const validateIdWithOCR = useCallback(async (file) => {
     if (!file) return;
     setIdVerifying(true);
     setIdVerification(null);
+    setOcrProgress(0);
 
-    // Check file type
+    // ── Step 1: Basic file checks ───────────────────────────────────────────
     const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
     if (!validTypes.includes(file.type)) {
       setIdVerification({ isValid: false, reason: 'Invalid file format. Please upload a JPEG, PNG, or WebP image.' });
       setIdVerifying(false);
       return;
     }
-
-    // Check file size (50 KB – 5 MB)
     if (file.size < 50 * 1024) {
       setIdVerification({ isValid: false, reason: 'File is too small (under 50 KB). Please upload a clear, readable photo of your ID.' });
       setIdVerifying(false);
@@ -444,67 +468,170 @@ export default function AuthPage() {
       return;
     }
 
-    // Load as image to check dimensions and pixel content
+    // ── Step 2: Image dimension & blank check ───────────────────────────────
+    const imgUrl = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => {
-      const { naturalWidth: w, naturalHeight: h } = img;
+    const dimOk = await new Promise((resolve) => {
+      img.onload = () => {
+        const { naturalWidth: w, naturalHeight: h } = img;
+        if (w < 300 || h < 200) {
+          setIdVerification({ isValid: false, reason: `Image is too small (${w}×${h}). Minimum 300×200 pixels required.` });
+          resolve(false);
+          return;
+        }
+        // Quick blank/solid-color check via pixel variance
+        const canvas = document.createElement('canvas');
+        const sw = Math.min(w, 200), sh = Math.min(h, 150);
+        canvas.width = sw; canvas.height = sh;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, sw, sh);
+        const { data } = ctx.getImageData(0, 0, sw, sh);
+        let sumR = 0, sumG = 0, sumB = 0, cnt = 0;
+        for (let i = 0; i < data.length; i += 16) { sumR += data[i]; sumG += data[i+1]; sumB += data[i+2]; cnt++; }
+        const avgR = sumR/cnt, avgG = sumG/cnt, avgB = sumB/cnt;
+        let variance = 0;
+        for (let i = 0; i < data.length; i += 16) {
+          variance += (data[i]-avgR)**2 + (data[i+1]-avgG)**2 + (data[i+2]-avgB)**2;
+        }
+        if (variance / (cnt * 3) < 50) {
+          setIdVerification({ isValid: false, reason: 'Image appears blank or solid-colored. Please upload a clear photo of your ID.' });
+          resolve(false);
+          return;
+        }
+        resolve(true);
+      };
+      img.onerror = () => {
+        setIdVerification({ isValid: false, reason: 'Could not read the image file. Please try a different photo.' });
+        resolve(false);
+      };
+      img.src = imgUrl;
+    });
 
-      if (w < 300 || h < 200) {
-        setIdVerification({ isValid: false, reason: `Image is too small (${w}×${h}). Minimum required is 300×200 pixels for a readable ID.` });
+    if (!dimOk) { setIdVerifying(false); return; }
+
+    // ── Step 3: OCR scan with Tesseract.js ──────────────────────────────────
+    try {
+      setOcrProgress(5);
+      const worker = await createWorker('eng+fil', 1, {
+        logger: (m) => {
+          if (m.status === 'recognizing text') setOcrProgress(Math.round(m.progress * 100));
+        },
+      });
+
+      const { data: ocrResult } = await worker.recognize(file);
+      await worker.terminate();
+
+      const extractedText = ocrResult.text || '';
+      const wordCount = extractedText.trim().split(/\s+/).filter(w => w.length > 1).length;
+
+      // Must contain enough text to be an ID (at least 5 words)
+      if (wordCount < 5) {
+        setIdVerification({
+          isValid: false,
+          reason: `Could not read enough text from the image (${wordCount} words detected). Please upload a clearer, well-lit photo of your ID.`,
+          extractedText,
+        });
         setIdVerifying(false);
         return;
       }
 
-      // Sample pixels to detect blank/solid-color images
-      const canvas = document.createElement('canvas');
-      const sampleSize = Math.min(w, 200);
-      const sampleH = Math.min(h, 150);
-      canvas.width = sampleSize;
-      canvas.height = sampleH;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, sampleSize, sampleH);
-      const { data } = ctx.getImageData(0, 0, sampleSize, sampleH);
+      // ── Step 4: Name matching ───────────────────────────────────────────
+      const userName = regData.name.trim();
+      let nameMatch = false;
+      let matchDetail = '';
 
-      // Calculate pixel variance across RGB channels
-      let sumR = 0, sumG = 0, sumB = 0, count = 0;
-      for (let i = 0; i < data.length; i += 16) { // sample every 4th pixel
-        sumR += data[i]; sumG += data[i + 1]; sumB += data[i + 2]; count++;
-      }
-      const avgR = sumR / count, avgG = sumG / count, avgB = sumB / count;
-      let variance = 0;
-      for (let i = 0; i < data.length; i += 16) {
-        variance += (data[i] - avgR) ** 2 + (data[i + 1] - avgG) ** 2 + (data[i + 2] - avgB) ** 2;
-      }
-      variance /= count * 3;
+      if (userName.length >= 2) {
+        const normalizedOcr = extractedText.toLowerCase().replace(/[^a-z\s]/g, '');
+        const nameParts = userName.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
+        const matchedParts = nameParts.filter(part => normalizedOcr.includes(part));
+        const matchRatio = nameParts.length > 0 ? matchedParts.length / nameParts.length : 0;
 
-      if (variance < 50) {
-        setIdVerification({ isValid: false, reason: 'Image appears blank or solid-colored. Please upload a clear photo of your ID.' });
+        if (matchRatio >= 0.5) {
+          nameMatch = true;
+          matchDetail = matchedParts.length === nameParts.length
+            ? 'Full name found on ID'
+            : `Partial match: "${matchedParts.join(', ')}" found on ID`;
+        } else {
+          matchDetail = nameParts.length > 0
+            ? `Name "${userName}" not found on ID. Detected text may not match your registered name.`
+            : '';
+        }
+      }
+
+      // Detect common Philippine ID keywords
+      const idKeywords = ['republic', 'philippines', 'pilipinas', 'identification', 'driver', 'license',
+        'passport', 'postal', 'voter', 'sss', 'gsis', 'philhealth', 'pag-ibig', 'umid',
+        'barangay', 'national', 'school', 'student', 'senior citizen', 'pwd', 'tin', 'nbi',
+        'police', 'clearance', 'certificate', 'prc', 'valid'];
+      const lowerText = extractedText.toLowerCase();
+      const detectedKeywords = idKeywords.filter(kw => lowerText.includes(kw));
+      const looksLikeId = detectedKeywords.length >= 1;
+
+      if (!looksLikeId && !nameMatch) {
+        setIdVerification({
+          isValid: false,
+          reason: 'The image does not appear to be a valid ID. No ID-related text or matching name detected. Please upload a government-issued ID.',
+          extractedText: extractedText.slice(0, 200),
+        });
         setIdVerifying(false);
         return;
       }
 
-      // All checks passed
-      setIdVerification({ isValid: true, reason: 'ID photo accepted. Your ID will be reviewed by staff upon submission.' });
-      toast.success('ID photo validated successfully');
-      setIdVerifying(false);
-    };
+      // Build result
+      const reasons = [];
+      if (looksLikeId) reasons.push(`ID document detected (${detectedKeywords.slice(0, 3).join(', ')})`);
+      if (nameMatch) reasons.push(matchDetail);
+      else if (userName.length >= 2) reasons.push(matchDetail || 'Name not verified — staff will review');
 
-    img.onerror = () => {
-      setIdVerification({ isValid: false, reason: 'Could not read the image file. Please try a different photo.' });
+      setIdVerification({
+        isValid: true,
+        nameMatch,
+        detectedKeywords: detectedKeywords.slice(0, 5),
+        reason: reasons.join('. ') + '.',
+        extractedText: extractedText.slice(0, 300),
+      });
+      toast.success(nameMatch ? 'ID verified — name matches!' : 'ID accepted — will be reviewed by staff');
+    } catch (err) {
+      console.error('OCR error:', err);
+      // Fallback: accept the ID for manual review if OCR fails
+      setIdVerification({
+        isValid: true,
+        nameMatch: false,
+        reason: 'OCR scan could not complete. Your ID photo has been accepted and will be reviewed by staff.',
+      });
+      toast.success('ID photo accepted for manual review');
+    } finally {
       setIdVerifying(false);
-    };
-
-    img.src = URL.createObjectURL(file);
-  }, []);
+      setOcrProgress(0);
+    }
+  }, [regData.name]);
 
   // Auto-validate whenever idPhoto changes
   useEffect(() => {
-    if (idPhoto) validateIdLocally(idPhoto);
-  }, [idPhoto, validateIdLocally]);
+    if (idPhoto) validateIdWithOCR(idPhoto);
+  }, [idPhoto, validateIdWithOCR]);
+
+  // ── Password strength validation ──────────────────────────────────────────
+  const passwordRules = [
+    { test: (pw) => pw.length >= 8, label: 'At least 8 characters' },
+    { test: (pw) => /[A-Z]/.test(pw), label: 'One uppercase letter' },
+    { test: (pw) => /[a-z]/.test(pw), label: 'One lowercase letter' },
+    { test: (pw) => /[0-9]/.test(pw), label: 'One number' },
+    { test: (pw) => /[^A-Za-z0-9]/.test(pw), label: 'One special character (!@#$%^&*)' },
+  ];
+
+  const passedRules = passwordRules.filter(r => r.test(regData.password));
+  const allRulesPassed = passedRules.length === passwordRules.length;
+  const strengthPercent = (passedRules.length / passwordRules.length) * 100;
+  const strengthColor = strengthPercent <= 20 ? 'bg-red-500' : strengthPercent <= 40 ? 'bg-orange-500' : strengthPercent <= 60 ? 'bg-amber-500' : strengthPercent <= 80 ? 'bg-yellow-400' : 'bg-green-500';
+  const strengthLabel = strengthPercent <= 20 ? 'Very Weak' : strengthPercent <= 40 ? 'Weak' : strengthPercent <= 60 ? 'Fair' : strengthPercent <= 80 ? 'Good' : 'Strong';
 
   const handleRegister = async (e) => {
     e.preventDefault();
     // Client-side validation before hitting the API
+    if (!allRulesPassed) {
+      return toast.error('Password does not meet all requirements');
+    }
     if (regData.password !== regData.confirmPassword) {
       return toast.error('Passwords do not match');
     }
@@ -523,6 +650,7 @@ export default function AuthPage() {
       formData.append('barangay', regData.barangay);
       if (regData.address) formData.append('address', regData.address);
       formData.append('idPhoto', idPhoto);
+      formData.append('idNameMatch', idVerification?.nameMatch ? 'true' : 'false');
 
       const { data } = await api.post('/auth/register', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -564,6 +692,16 @@ export default function AuthPage() {
         userId: pendingUserId,
         otp: authOtpCode,
       });
+
+      // Blue result: account created but ID is pending admin review
+      if (data.pendingReview) {
+        toast.success('Account created! Your ID is under admin review.');
+        setTab('login');
+        setPendingUserId(null);
+        setAuthOtpCode('');
+        return;
+      }
+
       loginUser(data.token, data.user);
       toast.success(`Welcome, ${data.user.name}!`);
       navigate(data.user.role === 'ADMIN' ? '/admin' : '/dashboard');
@@ -651,6 +789,15 @@ export default function AuthPage() {
         idToken,
       });
 
+      // Blue result: account created but ID is pending admin review
+      if (data.pendingReview) {
+        toast.success('Account created! Your ID is under admin review.');
+        setTab('login');
+        setPendingUserId(null);
+        setAuthOtpCode('');
+        return;
+      }
+
       loginUser(data.token, data.user);
       toast.success(`Welcome, ${data.user.name}!`);
       navigate(data.user.role === 'ADMIN' ? '/admin' : '/dashboard');
@@ -660,6 +807,109 @@ export default function AuthPage() {
       } else {
         toast.error(err.response?.data?.error || err.message || 'Verification failed');
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Reupload ID OCR validation ──────────────────────────────────────────
+  const validateReuploadId = useCallback(async (file) => {
+    if (!file) return;
+    setReuploadVerifying(true);
+    setReuploadVerification(null);
+    setReuploadOcrProgress(0);
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      setReuploadVerification({ isValid: false, reason: 'Invalid file format. Please upload a JPEG, PNG, or WebP image.' });
+      setReuploadVerifying(false);
+      return;
+    }
+    if (file.size < 50 * 1024 || file.size > 5 * 1024 * 1024) {
+      setReuploadVerification({ isValid: false, reason: file.size < 50 * 1024 ? 'File too small (under 50 KB).' : 'File exceeds 5 MB limit.' });
+      setReuploadVerifying(false);
+      return;
+    }
+
+    try {
+      setReuploadOcrProgress(5);
+      const worker = await createWorker('eng+fil', 1, {
+        logger: (m) => { if (m.status === 'recognizing text') setReuploadOcrProgress(Math.round(m.progress * 100)); },
+      });
+      const { data: ocrResult } = await worker.recognize(file);
+      await worker.terminate();
+
+      const extractedText = ocrResult.text || '';
+      const wordCount = extractedText.trim().split(/\s+/).filter(w => w.length > 1).length;
+      if (wordCount < 5) {
+        setReuploadVerification({ isValid: false, reason: `Could not read enough text (${wordCount} words). Upload a clearer photo.` });
+        setReuploadVerifying(false);
+        return;
+      }
+
+      // Name matching using the credentials name (we don't have the name here, just check ID keywords)
+      const idKeywords = ['republic', 'philippines', 'pilipinas', 'identification', 'driver', 'license',
+        'passport', 'postal', 'voter', 'sss', 'gsis', 'philhealth', 'pag-ibig', 'umid',
+        'barangay', 'national', 'school', 'student', 'senior citizen', 'pwd', 'tin', 'nbi',
+        'police', 'clearance', 'certificate', 'prc', 'valid'];
+      const lowerText = extractedText.toLowerCase();
+      const detectedKeywords = idKeywords.filter(kw => lowerText.includes(kw));
+      const looksLikeId = detectedKeywords.length >= 1;
+
+      // We can't do name matching here since we don't have the user's name,
+      // but the backend already has it. We'll send the full OCR text for reference.
+      setReuploadVerification({
+        isValid: looksLikeId || wordCount >= 10,
+        nameMatch: false, // Will be determined by admin review
+        detectedKeywords: detectedKeywords.slice(0, 5),
+        reason: looksLikeId ? `ID document detected (${detectedKeywords.slice(0, 3).join(', ')}).` : 'Document accepted for review.',
+        extractedText: extractedText.slice(0, 300),
+      });
+      toast.success(looksLikeId ? 'ID detected — ready to upload' : 'Document accepted for review');
+    } catch (err) {
+      console.error('Reupload OCR error:', err);
+      setReuploadVerification({ isValid: true, nameMatch: false, reason: 'OCR scan could not complete. Photo accepted for manual review.' });
+    } finally {
+      setReuploadVerifying(false);
+      setReuploadOcrProgress(0);
+    }
+  }, []);
+
+  // Auto-validate reupload photo
+  useEffect(() => {
+    if (reuploadIdPhoto) validateReuploadId(reuploadIdPhoto);
+  }, [reuploadIdPhoto, validateReuploadId]);
+
+  const handleReuploadId = async () => {
+    if (!reuploadIdPhoto) return toast.error('Please select an ID photo');
+    if (!reuploadVerification?.isValid) return toast.error('Please upload a valid ID photo');
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('idPhoto', reuploadIdPhoto);
+      formData.append('emailOrPhone', reuploadCredentials.emailOrPhone);
+      formData.append('password', reuploadCredentials.password);
+      formData.append('idNameMatch', reuploadVerification?.nameMatch ? 'true' : 'false');
+
+      const { data } = await api.post('/auth/reupload-id', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      if (data.verified) {
+        toast.success(data.message);
+        setTab('login');
+      } else {
+        toast.success(data.message);
+        setTab('login');
+      }
+
+      // Reset reupload state
+      setReuploadIdPhoto(null);
+      setReuploadIdPreview(null);
+      setReuploadVerification(null);
+      setIdBlockedStatus(null);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to reupload ID');
     } finally {
       setLoading(false);
     }
@@ -829,8 +1079,14 @@ export default function AuthPage() {
                         onChange={e => setLoginData({ ...loginData, password: e.target.value })}
                         required
                       />
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 transition-colors">
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-0.5 select-none"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4 pointer-events-none" /> : <Eye className="w-4 h-4 pointer-events-none" />}
                       </button>
                     </div>
                   </div>
@@ -1086,6 +1342,119 @@ export default function AuthPage() {
                 </div>
               )}
 
+              {/* ── ID Blocked — Pending Review / Rejected ──────────────────
+                  Shown when login is blocked due to ID verification status.
+                  User can reupload a new ID or wait for admin approval.
+              ──────────────────────────────────────────────────────────────── */}
+              {tab === 'id-blocked' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setTab('login'); setIdBlockedStatus(null); setReuploadIdPhoto(null); setReuploadIdPreview(null); setReuploadVerification(null); }}
+                      className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <ArrowLeft className="w-4 h-4 text-gray-500" />
+                    </button>
+                    <h2 className="text-lg font-semibold text-gray-900">ID Verification Required</h2>
+                  </div>
+
+                  {/* Status message */}
+                  <div className={`rounded-lg p-4 border ${idBlockedStatus === 'ID_PENDING_REVIEW' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
+                    <div className="flex items-start gap-3">
+                      <Shield className={`w-5 h-5 mt-0.5 flex-shrink-0 ${idBlockedStatus === 'ID_PENDING_REVIEW' ? 'text-amber-500' : 'text-red-500'}`} />
+                      <div>
+                        <p className={`text-sm font-medium ${idBlockedStatus === 'ID_PENDING_REVIEW' ? 'text-amber-800' : 'text-red-800'}`}>
+                          {idBlockedStatus === 'ID_PENDING_REVIEW'
+                            ? 'Your ID is pending admin verification'
+                            : 'Your ID was rejected'}
+                        </p>
+                        <p className={`text-xs mt-1 ${idBlockedStatus === 'ID_PENDING_REVIEW' ? 'text-amber-600' : 'text-red-600'}`}>
+                          {idBlockedStatus === 'ID_PENDING_REVIEW'
+                            ? 'Please wait for admin approval, or upload a clearer ID photo below.'
+                            : 'Please upload a valid government-issued ID to regain access.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Reupload section */}
+                  <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+                    <h3 className="text-sm font-medium text-gray-700">Reupload ID Photo</h3>
+
+                    <div className="flex items-center gap-2">
+                      <label className="flex-1 cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setReuploadIdPhoto(file);
+                              setReuploadIdPreview(URL.createObjectURL(file));
+                              setReuploadVerification(null);
+                            }
+                          }}
+                        />
+                        <div className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors text-sm text-gray-700 min-h-[44px]">
+                          <Camera className="w-4 h-4" />
+                          {reuploadIdPhoto ? 'Change Photo' : 'Select ID Photo'}
+                        </div>
+                      </label>
+                    </div>
+
+                    {/* Preview */}
+                    {reuploadIdPreview && (
+                      <div className="relative">
+                        <img src={reuploadIdPreview} alt="ID preview" className="w-full h-40 object-contain bg-gray-50 rounded-lg border" />
+                        <button
+                          type="button"
+                          onClick={() => { setReuploadIdPhoto(null); setReuploadIdPreview(null); setReuploadVerification(null); }}
+                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* OCR progress */}
+                    {reuploadVerifying && (
+                      <div className="space-y-1">
+                        <p className="text-xs text-gray-500">Scanning ID... {reuploadOcrProgress}%</p>
+                        <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                          <div className="h-full bg-primary-500 rounded-full transition-all duration-300" style={{ width: `${reuploadOcrProgress}%` }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Verification result */}
+                    {reuploadVerification && !reuploadVerifying && (
+                      <div className={`rounded-lg p-3 text-sm ${reuploadVerification.isValid ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+                        <div className="flex items-center gap-2">
+                          {reuploadVerification.isValid ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                          <span>{reuploadVerification.reason}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Submit reupload */}
+                    <button
+                      type="button"
+                      onClick={handleReuploadId}
+                      disabled={loading || reuploadVerifying || !reuploadIdPhoto || !reuploadVerification?.isValid}
+                      className="btn-primary w-full py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loading ? 'Uploading...' : 'Submit New ID'}
+                    </button>
+                  </div>
+
+                  <p className="text-center text-xs text-gray-400">
+                    After uploading, admin will review your ID and approve your account.
+                  </p>
+                </div>
+              )}
+
               {/* ── Forgot Password Flow ──────────────────────────────────────
                   Step 1: Enter email/phone → OTP is sent.
                   Step 2: Enter OTP + new password → password is updated.
@@ -1160,29 +1529,48 @@ export default function AuthPage() {
                           <Lock className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
                           <input
                             type={showResetPw ? 'text' : 'password'}
+                            autoComplete="new-password"
                             className="input-field pl-10 pr-10"
-                            placeholder="Min. 6 characters"
+                            placeholder="Min. 8 characters"
                             value={resetNewPw}
                             onChange={e => setResetNewPw(e.target.value)}
                             required
-                            minLength={6}
+                            minLength={8}
                           />
-                          {/* Eye toggle for the new-password field */}
-                          <button type="button" onClick={() => setShowResetPw(s => !s)} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
-                            {showResetPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            onClick={() => setShowResetPw(s => !s)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-0.5 select-none"
+                            aria-label={showResetPw ? 'Hide password' : 'Show password'}
+                          >
+                            {showResetPw ? <EyeOff className="w-4 h-4 pointer-events-none" /> : <Eye className="w-4 h-4 pointer-events-none" />}
                           </button>
                         </div>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
-                        <input
-                          type="password"
-                          className="input-field"
-                          placeholder="Re-enter new password"
-                          value={resetConfirm}
-                          onChange={e => setResetConfirm(e.target.value)}
-                          required
-                        />
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                          <input
+                            type={showResetConfirm ? 'text' : 'password'}
+                            autoComplete="new-password"
+                            className="input-field pl-10 pr-10"
+                            placeholder="Re-enter new password"
+                            value={resetConfirm}
+                            onChange={e => setResetConfirm(e.target.value)}
+                            required
+                          />
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            onClick={() => setShowResetConfirm(s => !s)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-0.5 select-none"
+                            aria-label={showResetConfirm ? 'Hide password' : 'Show password'}
+                          >
+                            {showResetConfirm ? <EyeOff className="w-4 h-4 pointer-events-none" /> : <Eye className="w-4 h-4 pointer-events-none" />}
+                          </button>
+                        </div>
                       </div>
                       <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
                         {loading ? 'Resetting...' : 'Reset Password'}
@@ -1281,8 +1669,25 @@ export default function AuthPage() {
                         <div className="absolute left-3 top-2.5 w-5 h-5 rounded bg-primary-50 flex items-center justify-center group-focus-within:bg-primary-100 transition-colors">
                           <Lock className="w-3.5 h-3.5 text-primary-500" />
                         </div>
-                        <input type="password" className="input-field pl-11 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500" placeholder="min 6 chars" value={regData.password}
-                          onChange={e => setRegData({ ...regData, password: e.target.value })} required minLength={6} />
+                        <input
+                          type={showRegPassword ? 'text' : 'password'}
+                          autoComplete="new-password"
+                          className="input-field pl-11 pr-10 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                          placeholder="Min. 8 characters"
+                          value={regData.password}
+                          onChange={e => setRegData({ ...regData, password: e.target.value })}
+                          required
+                          minLength={8}
+                        />
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => setShowRegPassword(v => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-0.5 select-none"
+                          aria-label={showRegPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showRegPassword ? <EyeOff className="w-4 h-4 pointer-events-none" /> : <Eye className="w-4 h-4 pointer-events-none" />}
+                        </button>
                       </div>
                     </div>
                     <div>
@@ -1291,16 +1696,52 @@ export default function AuthPage() {
                         <div className="absolute left-3 top-2.5 w-5 h-5 rounded bg-primary-50 flex items-center justify-center group-focus-within:bg-primary-100 transition-colors">
                           <Lock className="w-3.5 h-3.5 text-primary-500" />
                         </div>
-                        <input type="password" className="input-field pl-11 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500" placeholder="••••••" value={regData.confirmPassword}
-                          onChange={e => setRegData({ ...regData, confirmPassword: e.target.value })} required />
+                        <input
+                          type={showRegConfirm ? 'text' : 'password'}
+                          autoComplete="new-password"
+                          className="input-field pl-11 pr-10 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                          placeholder="Re-enter password"
+                          value={regData.confirmPassword}
+                          onChange={e => setRegData({ ...regData, confirmPassword: e.target.value })}
+                          required
+                        />
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => setShowRegConfirm(v => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-0.5 select-none"
+                          aria-label={showRegConfirm ? 'Hide password' : 'Show password'}
+                        >
+                          {showRegConfirm ? <EyeOff className="w-4 h-4 pointer-events-none" /> : <Eye className="w-4 h-4 pointer-events-none" />}
+                        </button>
                       </div>
                     </div>
                   </div>
 
+                  {/* Password strength indicator */}
+                  {regData.password.length > 0 && (
+                    <div className="space-y-2 -mt-1">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full transition-all duration-300 ${strengthColor}`} style={{ width: `${strengthPercent}%` }} />
+                        </div>
+                        <span className={`text-xs font-medium ${strengthPercent <= 40 ? 'text-red-600' : strengthPercent <= 60 ? 'text-amber-600' : strengthPercent <= 80 ? 'text-yellow-600' : 'text-green-600'}`}>{strengthLabel}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                        {passwordRules.map((rule) => (
+                          <p key={rule.label} className={`text-[11px] flex items-center gap-1 ${rule.test(regData.password) ? 'text-green-600' : 'text-gray-400'}`}>
+                            {rule.test(regData.password) ? <CheckCircle className="w-3 h-3 flex-shrink-0" /> : <span className="w-3 h-3 flex-shrink-0 rounded-full border border-gray-300 inline-block" />}
+                            {rule.label}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Valid ID Photo Upload + Camera Capture + Verification */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Valid ID Photo <span className="text-red-400">*</span></label>
-                    <p className="text-xs text-gray-500 mb-2">Upload or capture a clear photo of any valid government-issued ID. Your photo will be validated automatically.</p>
+                    <p className="text-xs text-gray-500 mb-2">Upload or capture a clear photo of any valid government-issued ID. OCR will scan and verify your name automatically.</p>
 
                     {/* Camera view */}
                     {cameraOpen && (
@@ -1364,11 +1805,18 @@ export default function AuthPage() {
                       </div>
                     )}
 
-                    {/* Auto-validation spinner */}
+                    {/* OCR validation progress */}
                     {idPhoto && idVerifying && (
-                      <div className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-sm font-semibold">
-                        <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
-                        Validating ID photo...
+                      <div className="mt-3 w-full py-3 px-4 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-sm font-semibold">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                          {ocrProgress > 0 ? `Scanning ID text... ${ocrProgress}%` : 'Checking ID photo...'}
+                        </div>
+                        {ocrProgress > 0 && (
+                          <div className="w-full bg-amber-200 rounded-full h-1.5">
+                            <div className="bg-amber-600 h-1.5 rounded-full transition-all duration-300" style={{ width: `${ocrProgress}%` }} />
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1376,20 +1824,47 @@ export default function AuthPage() {
                     {idVerification && !idVerifying && (
                       <div className={`mt-3 p-3 rounded-xl text-sm ${
                         idVerification.isValid
-                          ? 'bg-green-50 border border-green-200'
+                          ? idVerification.nameMatch ? 'bg-green-50 border border-green-200' : 'bg-blue-50 border border-blue-200'
                           : 'bg-red-50 border border-red-200'
                       }`}>
                         <div className="flex items-start gap-2">
                           {idVerification.isValid ? (
-                            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                            <CheckCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${idVerification.nameMatch ? 'text-green-600' : 'text-blue-600'}`} />
                           ) : (
                             <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
                           )}
-                          <div>
-                            <p className={`font-semibold ${idVerification.isValid ? 'text-green-800' : 'text-red-800'}`}>
-                              {idVerification.isValid ? 'ID Photo Accepted' : 'Validation Failed'}
+                          <div className="flex-1">
+                            <p className={`font-semibold ${
+                              idVerification.isValid
+                                ? idVerification.nameMatch ? 'text-green-800' : 'text-blue-800'
+                                : 'text-red-800'
+                            }`}>
+                              {idVerification.isValid
+                                ? idVerification.nameMatch ? 'ID Verified — Name Matches' : 'ID Accepted — Pending Review'
+                                : 'Validation Failed'}
                             </p>
                             <p className="text-xs mt-1 opacity-80">{idVerification.reason}</p>
+                            {idVerification.detectedKeywords?.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {idVerification.detectedKeywords.map(kw => (
+                                  <span key={kw} className="text-[10px] px-1.5 py-0.5 bg-white/60 rounded-full font-medium capitalize">{kw}</span>
+                                ))}
+                              </div>
+                            )}
+                            {/* Red result: clear everything and retry */}
+                            {!idVerification.isValid && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIdPhoto(null);
+                                  setIdPreview(null);
+                                  setIdVerification(null);
+                                }}
+                                className="mt-2 text-xs font-medium text-red-600 hover:text-red-800 underline"
+                              >
+                                Clear & Try Again
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>

@@ -54,6 +54,7 @@ model User {
 
   // Verification
   idPhotoUrl  String?   // URL to the citizen's uploaded valid ID photo
+  idStatus    IdStatus  @default(NONE)  // ID verification status: VERIFIED, PENDING_REVIEW, REJECTED, NONE
 
   // Timestamps
   createdAt   DateTime  @default(now())  // When the account was created
@@ -430,6 +431,14 @@ model DirectoryEntry {
 enum Role {
   CLIENT  // Regular resident; can submit and view their own tickets
   ADMIN   // System administrator; full platform access
+}
+
+// ID verification status — tracks admin review of citizen-uploaded ID photos
+enum IdStatus {
+  VERIFIED        // OCR name-matched automatically (green result)
+  PENDING_REVIEW  // ID accepted but name not matched — awaiting admin review (blue result)
+  REJECTED        // Admin rejected the ID after manual review
+  NONE            // No ID uploaded
 }
 
 // Ticket lifecycle states — progress of a service request from submission to closure
