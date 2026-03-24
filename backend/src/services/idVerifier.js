@@ -16,7 +16,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import fs from 'fs';
 import path from 'path';
 
-const client = new Anthropic();
+// Lazily-initialised singleton — avoids creating a new HTTP connection pool at
+// module load time and reuses connections across verification calls.
+let _client = null;
+const getClient = () => _client ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 /**
  * Verifies an uploaded ID photo using Claude Vision.
@@ -71,7 +74,7 @@ export async function verifyIdPhoto(imagePath, registrationName) {
     const mediaTypes = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' };
     const mediaType = mediaTypes[ext] || 'image/jpeg';
 
-    const response = await client.messages.create({
+    const response = await getClient().messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
       tools: [

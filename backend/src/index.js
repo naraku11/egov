@@ -105,12 +105,13 @@ const authLimiter = rateLimit({
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
 
-// Parse incoming JSON payloads; 10 mb cap accommodates base64-encoded file
-// uploads while preventing excessively large request bodies.
-app.use(express.json({ limit: '10mb' }));
+// Parse incoming JSON payloads. 1 MB cap — file uploads go through Multer
+// (multipart), not JSON body, so 10 MB was unnecessarily large and risked
+// exhausting heap memory on shared hosting with a single large request.
+app.use(express.json({ limit: '1mb' }));
 
 // Also accept URL-encoded form bodies (e.g. legacy HTML forms).
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // ── Static files ──────────────────────────────────────────────────────────────
 
@@ -124,8 +125,22 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads'), {
 // ── Health check ──────────────────────────────────────────────────────────────
 
 // Simple liveness probe used by load balancers / uptime monitors.
-// Returns HTTP 200 with a JSON body including the current server timestamp.
+// Cached for 15 seconds so frequent polling does not hammer the database —
+// on shared hosting this was generating ~1 400 unnecessary DB queries/day.
+let _healthCache = null;
+let _healthCacheTime = 0;
+const HEALTH_CACHE_TTL = 15_000; // 15 seconds
+
 app.get('/health', async (req, res) => {
+  const now = Date.now();
+  if (_healthCache && now - _healthCacheTime < HEALTH_CACHE_TTL) {
+    return res.status(_healthCache.status === 'ok' ? 200 : 503).json({
+      ..._healthCache,
+      timestamp: new Date().toISOString(),
+      uptime: Math.floor(process.uptime()) + 's',
+    });
+  }
+
   const health = {
     status: 'ok',
     service: 'E-Gov Aloguinsan API',
@@ -135,7 +150,6 @@ app.get('/health', async (req, res) => {
     checks: {},
   };
 
-  // Database check
   try {
     await prisma.$queryRaw`SELECT 1`;
     health.checks.database = { status: 'ok' };
@@ -144,9 +158,11 @@ app.get('/health', async (req, res) => {
     health.status = 'degraded';
   }
 
-  // Socket.IO check
   const io = getIO();
   health.checks.socketio = { status: io ? 'ok' : 'unavailable' };
+
+  _healthCache = health;
+  _healthCacheTime = now;
 
   res.status(health.status === 'ok' ? 200 : 503).json(health);
 });

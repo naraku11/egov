@@ -21,7 +21,17 @@ import { PrismaClient } from '@prisma/client';
 
 // Reuse an existing client stored on the global object (dev hot-reload guard),
 // or create a fresh one if none exists yet.
-const prisma = globalThis.__prisma ?? new PrismaClient();
+// On shared hosting (Hostinger), limit the connection pool to 5 connections
+// to avoid exhausting the host's MySQL connection limit.
+const prisma = globalThis.__prisma ?? new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL
+        ? process.env.DATABASE_URL + (process.env.DATABASE_URL.includes('?') ? '&' : '?') + 'connection_limit=5&pool_timeout=10'
+        : undefined,
+    },
+  },
+});
 
 // Only persist the instance on globalThis in non-production environments.
 // In production each deployment starts a clean process, so the guard is

@@ -18,7 +18,10 @@
       "Bash(npm run:*)",
       "Bash(node -e \"import\\(''''./src/routes/auth.js''''\\).then\\(\\(\\) => console.log\\(''''auth.js OK''''\\)\\).catch\\(e => console.error\\(e.message\\)\\)\")",
       "Bash(node -e \"import\\(''''./src/controllers/authController.js''''\\).then\\(\\(\\) => console.log\\(''''authController.js OK''''\\)\\).catch\\(e => console.error\\(e.message\\)\\)\")",
-      "Bash(node -e \"import\\(''./src/controllers/authController.js''\\).then\\(\\(\\) => console.log\\(''OK''\\)\\).catch\\(e => console.error\\(e.message\\)\\)\")"
+      "Bash(node -e \"import\\(''./src/controllers/authController.js''\\).then\\(\\(\\) => console.log\\(''OK''\\)\\).catch\\(e => console.error\\(e.message\\)\\)\")",
+      "Bash(wc -l \"F:/Upload/Projects/deploy/egov/frontend/src/pages\"/*.jsx)",
+      "Bash(grep -n \"console.log\\\\|console.error\" F:/Upload/Projects/deploy/egov/backend/src/**/*.js)",
+      "Bash(wc -l \"F:/Upload/Projects/deploy/egov/frontend/src/components\"/*.jsx)"
     ]
   }
 }

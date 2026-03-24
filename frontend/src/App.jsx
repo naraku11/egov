@@ -20,10 +20,12 @@ import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import { LanguageProvider } from './contexts/LanguageContext.jsx';
 import { SocketProvider } from './contexts/SocketContext.jsx';
 import LandingPage from './pages/LandingPage.jsx';
-import AuthPage from './pages/AuthPage.jsx';
 
-// Lazy-load heavy pages — splits Recharts, jsPDF, etc. into separate chunks
-// so the initial bundle stays small and pages load on demand.
+// Lazy-load heavy pages — splits Recharts, jsPDF, tesseract.js, firebase,
+// etc. into separate chunks so the initial bundle stays small.
+// AuthPage is lazy-loaded because it imports tesseract.js (~1.4 MB) and
+// firebase (~250 KB) which are only needed during login/registration.
+const AuthPage             = lazy(() => import('./pages/AuthPage.jsx'));
 const ClientDashboard   = lazy(() => import('./pages/ClientDashboard.jsx'));
 const SubmitConcern     = lazy(() => import('./pages/SubmitConcern.jsx'));
 const TrackTicket       = lazy(() => import('./pages/TrackTicket.jsx'));

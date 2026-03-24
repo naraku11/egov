@@ -40,9 +40,13 @@ import prisma from '../lib/prisma.js';
  *   The tool's structured output: department code and a 0–1 confidence score.
  * @throws {Error} If Claude does not return a `tool_use` content block.
  */
+// Lazily-initialised singleton — avoids creating a new HTTP connection pool on
+// every classification call, which was exhausting memory on shared hosting.
+let _client = null;
+const getClient = () => _client ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
 const classifyWithClaude = async (text, departments) => {
-  // Instantiate a new Anthropic client using the key stored in the environment.
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const client = getClient();
 
   // Build a human-readable department list for the prompt, optionally including
   // description and keywords so Claude can make a more informed decision.

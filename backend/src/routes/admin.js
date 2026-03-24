@@ -75,19 +75,23 @@ router.get('/stats', authenticate, requireAdmin, async (req, res, next) => {
       department: departments.find(dept => dept.id === d.departmentId),
     }));
 
-    // Build a day-by-day ticket creation trend for the last 7 days
-    // Single query instead of 7 sequential counts
+    // Build a day-by-day ticket creation trend for the last 7 days.
+    // Uses a Map for O(n) grouping instead of O(n*7) repeated .filter() calls.
     const trendStart = new Date(); trendStart.setDate(trendStart.getDate() - 6); trendStart.setHours(0, 0, 0, 0);
     const trendTickets = await prisma.ticket.findMany({
       where: { createdAt: { gte: trendStart } },
       select: { createdAt: true },
     });
+    const trendMap = {};
+    for (const t of trendTickets) {
+      const key = t.createdAt.toISOString().split('T')[0];
+      trendMap[key] = (trendMap[key] || 0) + 1;
+    }
     const last7 = [];
     for (let i = 6; i >= 0; i--) {
       const day = new Date(); day.setDate(day.getDate() - i);
       const dateStr = new Date(day.setHours(0, 0, 0, 0)).toISOString().split('T')[0];
-      const count = trendTickets.filter(t => t.createdAt.toISOString().split('T')[0] === dateStr).length;
-      last7.push({ date: dateStr, count });
+      last7.push({ date: dateStr, count: trendMap[dateStr] || 0 });
     }
 
     res.json({
@@ -175,10 +179,23 @@ router.get('/tickets', authenticate, requireAdmin, async (req, res, next) => {
  */
 router.get('/users', authenticate, requireAdmin, async (req, res, next) => {
   try {
+    const { page, limit: lim } = req.query;
+    const select = { id: true, name: true, email: true, phone: true, barangay: true, role: true, createdAt: true, isVerified: true, idPhotoUrl: true, idStatus: true, _count: { select: { tickets: true } } };
+
+    // Support optional pagination — if page/limit are provided, paginate;
+    // otherwise return all (backwards-compatible with existing frontend).
+    if (page) {
+      const take = parseInt(lim) || 50;
+      const skip = (parseInt(page) - 1) * take;
+      const [users, total] = await Promise.all([
+        prisma.user.findMany({ where: { role: 'CLIENT' }, select, orderBy: { createdAt: 'desc' }, skip, take }),
+        prisma.user.count({ where: { role: 'CLIENT' } }),
+      ]);
+      return res.json({ users, total, page: parseInt(page), totalPages: Math.ceil(total / take) });
+    }
+
     const users = await prisma.user.findMany({
-      where: { role: 'CLIENT' },
-      select: { id: true, name: true, email: true, phone: true, barangay: true, role: true, createdAt: true, isVerified: true, idPhotoUrl: true, idStatus: true, _count: { select: { tickets: true } } },
-      orderBy: { createdAt: 'desc' },
+      where: { role: 'CLIENT' }, select, orderBy: { createdAt: 'desc' },
     });
     res.json(users);
   } catch (err) {
@@ -315,7 +332,8 @@ router.get('/reports', authenticate, requireAdmin, async (req, res, next) => {
       };
     }).sort((a, b) => b.resolved - a.resolved);
 
-    // Daily created vs. resolved trend — single bulk query instead of N sequential pairs
+    // Daily created vs. resolved trend — bulk fetch + Map grouping (O(n))
+    // instead of repeated .filter() per day which was O(n*days).
     const days = range === 'all' ? 30 : parseInt(range);
     const trendRangeStart = new Date(); trendRangeStart.setDate(trendRangeStart.getDate() - (days - 1)); trendRangeStart.setHours(0, 0, 0, 0);
     const [trendCreated, trendResolved] = await Promise.all([
@@ -328,14 +346,24 @@ router.get('/reports', authenticate, requireAdmin, async (req, res, next) => {
         select: { resolvedAt: true },
       }),
     ]);
+    const createdMap = {};
+    for (const t of trendCreated) {
+      const key = t.createdAt.toISOString().split('T')[0];
+      createdMap[key] = (createdMap[key] || 0) + 1;
+    }
+    const resolvedMap = {};
+    for (const t of trendResolved) {
+      const key = t.resolvedAt.toISOString().split('T')[0];
+      resolvedMap[key] = (resolvedMap[key] || 0) + 1;
+    }
     const trend = [];
     for (let i = days - 1; i >= 0; i--) {
       const day = new Date(); day.setDate(day.getDate() - i);
       const dateStr = new Date(day.setHours(0, 0, 0, 0)).toISOString().split('T')[0];
       trend.push({
         date: dateStr,
-        created:  trendCreated.filter(t => t.createdAt.toISOString().split('T')[0] === dateStr).length,
-        resolved: trendResolved.filter(t => t.resolvedAt.toISOString().split('T')[0] === dateStr).length,
+        created: createdMap[dateStr] || 0,
+        resolved: resolvedMap[dateStr] || 0,
       });
     }
 

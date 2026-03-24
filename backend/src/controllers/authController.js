@@ -120,6 +120,21 @@ const authOtpStore = new Map();
 // In-memory password-reset token store: emailOrPhone → { code, userId, expiresAt }
 const resetStore = new Map();
 
+// Garbage-collect expired entries every 60 seconds to prevent unbounded memory growth.
+// Without this, abandoned OTP/reset entries accumulate indefinitely on shared hosting.
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of otpStore.entries()) {
+    if (val.expiresAt < now) otpStore.delete(key);
+  }
+  for (const [key, val] of authOtpStore.entries()) {
+    if (val.expiresAt < now) authOtpStore.delete(key);
+  }
+  for (const [key, val] of resetStore.entries()) {
+    if (val.expiresAt < now) resetStore.delete(key);
+  }
+}, 60_000).unref();
+
 /**
  * Generates a 6-digit OTP and sends it to the user's email and/or phone.
  * Stores the OTP keyed by userId for later verification.
