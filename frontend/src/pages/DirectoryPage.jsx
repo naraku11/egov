@@ -296,7 +296,7 @@ export default function DirectoryPage() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
         {/* ── Page header with optional "Add Entry" button for admins ── */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <BookOpen className="w-6 h-6 text-primary-600" />
@@ -307,7 +307,7 @@ export default function DirectoryPage() {
           {isAdmin && (
             <button
               onClick={() => setModal('add')}
-              className="btn-primary flex items-center gap-2 text-sm"
+              className="btn-primary flex items-center justify-center gap-2 text-sm w-full sm:w-auto"
             >
               <Plus className="w-4 h-4" />
               Add Entry

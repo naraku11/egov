@@ -189,7 +189,7 @@ export default function FaqPage() {
               const Icon = sec.icon;
               return (
                 <button key={i} onClick={() => setActiveSection(i)}
-                  className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
+                  className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap min-h-[44px] ${
                     activeSection === i ? 'bg-primary-50 text-primary-700 shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
                   }`}>
                   <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${sec.color}`}>

@@ -258,7 +258,7 @@ export default function AnnouncementsPage() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
         {/* ── Page header with optional "New Announcement" button for admins ── */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Megaphone className="w-6 h-6 text-amber-500" />
@@ -269,7 +269,7 @@ export default function AnnouncementsPage() {
           {isAdmin && (
             <button
               onClick={() => setModal('add')}
-              className="btn-primary flex items-center gap-2 text-sm"
+              className="btn-primary flex items-center justify-center gap-2 text-sm w-full sm:w-auto"
             >
               <Plus className="w-4 h-4" />
               New Announcement

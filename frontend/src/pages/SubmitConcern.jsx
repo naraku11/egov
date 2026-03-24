@@ -286,7 +286,7 @@ export default function SubmitConcern() {
                       key={cat.value}
                       type="button"
                       onClick={() => setForm(f => ({ ...f, category: cat.value }))}
-                      className={`p-3 rounded-lg border text-left text-sm transition-all active:scale-[0.98] ${
+                      className={`p-3 rounded-lg border text-left text-sm transition-all active:scale-[0.98] min-h-[44px] ${
                         form.category === cat.value
                           ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium'
                           : 'border-gray-200 text-gray-700 hover:border-gray-300 active:bg-gray-50'
@@ -333,7 +333,7 @@ export default function SubmitConcern() {
                       key={opt.value}
                       type="button"
                       onClick={() => setForm(f => ({ ...f, priority: opt.value }))}
-                      className={`p-3 rounded-lg border-2 text-center transition-all active:scale-[0.98] ${
+                      className={`p-2 sm:p-3 rounded-lg border-2 text-center transition-all active:scale-[0.98] min-h-[44px] ${
                         form.priority === opt.value
                           ? `border-current bg-opacity-10 ${opt.color} font-semibold`
                           : 'border-gray-200 text-gray-600 hover:border-gray-300 active:bg-gray-50'

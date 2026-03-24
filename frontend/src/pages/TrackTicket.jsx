@@ -415,13 +415,13 @@ export default function TrackTicket() {
                             </div>
                           )}
 
-                          <div className={`max-w-[80%] sm:max-w-[72%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                          <div className={`max-w-[85%] sm:max-w-[72%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                             {/* Sender name label — only shown for servant messages */}
                             {!isMe && (
                               <p className="text-xs text-gray-500 mb-1 px-1">{msg.senderName}</p>
                             )}
                             {/* Bubble: primary colour for citizen, white card for servant */}
-                            <div className={`px-4 py-2.5 text-sm leading-relaxed ${
+                            <div className={`px-4 py-2.5 text-sm leading-relaxed break-words ${
                               isMe
                                 ? 'bg-primary-600 text-white rounded-2xl rounded-br-sm'
                                 : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-bl-sm shadow-sm'
@@ -439,7 +439,7 @@ export default function TrackTicket() {
                                       const fileUrl = `${apiBase}${att.filePath}`;
                                       return isImage ? (
                                         <a key={idx} href={fileUrl} target="_blank" rel="noopener noreferrer" className="block">
-                                          <img src={fileUrl} alt={att.fileName} className="max-w-[200px] rounded-lg mt-1" />
+                                          <img src={fileUrl} alt={att.fileName} className="max-w-full sm:max-w-[200px] rounded-lg mt-1" />
                                         </a>
                                       ) : (
                                         <a key={idx} href={fileUrl} target="_blank" rel="noopener noreferrer"
@@ -477,7 +477,7 @@ export default function TrackTicket() {
                       {/* Star rating buttons */}
                       <div className="flex gap-1.5 mb-3">
                         {[1,2,3,4,5].map(s => (
-                          <button key={s} onClick={() => setRating(s)} className="p-1.5 transition-transform hover:scale-110 active:scale-95 touch-target">
+                          <button key={s} onClick={() => setRating(s)} className="p-2 transition-transform hover:scale-110 active:scale-95 touch-target">
                             <Star className={`w-8 h-8 ${s <= rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />
                           </button>
                         ))}

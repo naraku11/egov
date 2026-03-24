@@ -18,7 +18,7 @@
 
 import prisma from '../lib/prisma.js';
 import { classifyConcern } from '../services/classifier.js';
-import { createNotification, sendTicketAssignedEmail } from '../services/notification.js';
+import { createNotification, notifyServant, sendTicketAssignedEmail } from '../services/notification.js';
 import { getIO } from '../lib/socket.js';
 import path from 'path';
 
@@ -179,8 +179,14 @@ export const createTicket = async (req, res, next) => {
       `Your concern has been submitted. Ticket #${ticket.ticketNumber}`
     );
 
-    // Email the assigned servant about the new ticket
+    // Notify the assigned servant (real-time + email)
     if (servant) {
+      notifyServant(servant.id, {
+        ticketId: ticket.id,
+        type: 'TICKET_ASSIGNED',
+        title: 'New Ticket Assigned',
+        message: `Ticket #${ticket.ticketNumber}: ${ticket.title}`,
+      });
       sendTicketAssignedEmail(servant.email, servant.name, ticket);
     }
 
@@ -474,7 +480,7 @@ export const addMessage = async (req, res, next) => {
       },
     });
 
-    // Notify the resident when a servant replies (not needed for resident → servant direction)
+    // Notify the resident when a servant replies
     if (isServant) {
       await createNotification(
         ticket.userId,
@@ -483,6 +489,14 @@ export const addMessage = async (req, res, next) => {
         'New Response',
         `${senderName} replied to your ticket #${ticket.ticketNumber}`
       );
+    } else if (ticket.servantId) {
+      // Notify the assigned servant when a citizen sends a message
+      notifyServant(ticket.servantId, {
+        ticketId: ticket.id,
+        type: 'NEW_MESSAGE',
+        title: 'New Citizen Message',
+        message: `${senderName} sent a message on ticket #${ticket.ticketNumber}`,
+      });
     }
 
     // Push the new message to all clients subscribed to this ticket room

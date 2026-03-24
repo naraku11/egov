@@ -110,18 +110,19 @@ export const sendEmailNotification = async (to, subject, html) => {
  */
 export const createNotification = async (userId, ticketId, type, title, message) => {
   try {
+    // Look up the target user — skip admin accounts (they don't receive in-app notifications)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, name: true, role: true },
+    });
+    if (!user || user.role === 'ADMIN') return;
+
     const notif = await prisma.notification.create({
       data: { userId, ticketId, type, title, message },
     });
 
     const io = getIO();
     if (io) io.to(`user:${userId}`).emit('notification:new', notif);
-
-    // Also send email to the user if they have one
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, name: true },
-    });
 
     if (user?.email) {
       const clientUrl = process.env.CLIENT_URL || 'https://aloguinsan-egov.online';
@@ -137,6 +138,27 @@ export const createNotification = async (userId, ticketId, type, title, message)
   } catch (err) {
     console.error('Failed to create notification:', err);
   }
+};
+
+// ─── Servant Notification (Socket-only, no DB persistence) ──────────────────
+
+/**
+ * Sends a real-time notification to a public servant via Socket.IO.
+ * Unlike citizen notifications, servant notifications are not persisted to the
+ * database — they exist only for the duration of the servant's session.
+ *
+ * @param {string} servantId - Servant ID to notify
+ * @param {object} data      - Notification payload { ticketId, type, title, message }
+ */
+export const notifyServant = (servantId, data) => {
+  const io = getIO();
+  if (!io || !servantId) return;
+  io.to(`servant:${servantId}`).emit('notification:new', {
+    id: `sn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    ...data,
+    isRead: false,
+    createdAt: new Date().toISOString(),
+  });
 };
 
 // ─── Standalone Email Helpers ────────────────────────────────────────────────

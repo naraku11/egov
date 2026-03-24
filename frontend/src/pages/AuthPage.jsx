@@ -411,32 +411,96 @@ export default function AuthPage() {
     setCameraOpen(false);
   };
 
-  // ── ID Verification via API ───────────────────────────────────────────────
-  const verifyId = async () => {
-    if (!idPhoto) return toast.error('Please upload or capture an ID photo first');
-    if (!regData.name) return toast.error('Please enter your name first so we can verify it against the ID');
+  // ── Client-side ID Validation (auto-triggered, no AI) ──────────────────────
+  /**
+   * Validates the uploaded/captured ID photo locally:
+   *  - File type must be JPEG, PNG, or WebP
+   *  - File size must be between 50 KB and 5 MB
+   *  - Image dimensions must be at least 300×200 px
+   *  - Image must not be blank (checks pixel variance)
+   */
+  const validateIdLocally = useCallback((file) => {
+    if (!file) return;
     setIdVerifying(true);
     setIdVerification(null);
-    try {
-      const formData = new FormData();
-      formData.append('idPhoto', idPhoto);
-      formData.append('name', regData.name);
-      const { data } = await api.post('/auth/verify-id', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setIdVerification(data);
-      if (data.isValid) {
-        toast.success(`ID verified: ${data.idType} (${data.confidence}% confidence)`);
-      } else {
-        toast.error(data.reason || 'ID verification failed. Please upload a clear photo of a valid government ID.');
-      }
-    } catch (err) {
-      toast.error('Verification service error. You can proceed and your ID will be reviewed manually.');
-      setIdVerification({ isValid: true, needsManualReview: true, reason: 'Service unavailable — manual review required.' });
-    } finally {
+
+    // Check file type
+    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      setIdVerification({ isValid: false, reason: 'Invalid file format. Please upload a JPEG, PNG, or WebP image.' });
       setIdVerifying(false);
+      return;
     }
-  };
+
+    // Check file size (50 KB – 5 MB)
+    if (file.size < 50 * 1024) {
+      setIdVerification({ isValid: false, reason: 'File is too small (under 50 KB). Please upload a clear, readable photo of your ID.' });
+      setIdVerifying(false);
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setIdVerification({ isValid: false, reason: 'File exceeds 5 MB limit. Please use a smaller image.' });
+      setIdVerifying(false);
+      return;
+    }
+
+    // Load as image to check dimensions and pixel content
+    const img = new Image();
+    img.onload = () => {
+      const { naturalWidth: w, naturalHeight: h } = img;
+
+      if (w < 300 || h < 200) {
+        setIdVerification({ isValid: false, reason: `Image is too small (${w}×${h}). Minimum required is 300×200 pixels for a readable ID.` });
+        setIdVerifying(false);
+        return;
+      }
+
+      // Sample pixels to detect blank/solid-color images
+      const canvas = document.createElement('canvas');
+      const sampleSize = Math.min(w, 200);
+      const sampleH = Math.min(h, 150);
+      canvas.width = sampleSize;
+      canvas.height = sampleH;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, sampleSize, sampleH);
+      const { data } = ctx.getImageData(0, 0, sampleSize, sampleH);
+
+      // Calculate pixel variance across RGB channels
+      let sumR = 0, sumG = 0, sumB = 0, count = 0;
+      for (let i = 0; i < data.length; i += 16) { // sample every 4th pixel
+        sumR += data[i]; sumG += data[i + 1]; sumB += data[i + 2]; count++;
+      }
+      const avgR = sumR / count, avgG = sumG / count, avgB = sumB / count;
+      let variance = 0;
+      for (let i = 0; i < data.length; i += 16) {
+        variance += (data[i] - avgR) ** 2 + (data[i + 1] - avgG) ** 2 + (data[i + 2] - avgB) ** 2;
+      }
+      variance /= count * 3;
+
+      if (variance < 50) {
+        setIdVerification({ isValid: false, reason: 'Image appears blank or solid-colored. Please upload a clear photo of your ID.' });
+        setIdVerifying(false);
+        return;
+      }
+
+      // All checks passed
+      setIdVerification({ isValid: true, reason: 'ID photo accepted. Your ID will be reviewed by staff upon submission.' });
+      toast.success('ID photo validated successfully');
+      setIdVerifying(false);
+    };
+
+    img.onerror = () => {
+      setIdVerification({ isValid: false, reason: 'Could not read the image file. Please try a different photo.' });
+      setIdVerifying(false);
+    };
+
+    img.src = URL.createObjectURL(file);
+  }, []);
+
+  // Auto-validate whenever idPhoto changes
+  useEffect(() => {
+    if (idPhoto) validateIdLocally(idPhoto);
+  }, [idPhoto, validateIdLocally]);
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -446,7 +510,7 @@ export default function AuthPage() {
     }
     if (!regData.barangay) return toast.error('Please select your barangay');
     if (!idPhoto) return toast.error('Please upload a valid ID photo for verification');
-    if (!idVerification?.isValid) return toast.error('Please verify your ID first by clicking the "Verify ID" button');
+    if (!idVerification?.isValid) return toast.error('Please upload a clear, valid ID photo that passes validation');
     if (!agreedToTerms) return toast.error('Please agree to the Terms and Conditions');
     setLoading(true);
     try {
@@ -1236,7 +1300,7 @@ export default function AuthPage() {
                   {/* Valid ID Photo Upload + Camera Capture + Verification */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Valid ID Photo <span className="text-red-400">*</span></label>
-                    <p className="text-xs text-gray-500 mb-2">Upload or capture a clear photo of any valid government-issued ID for AI-powered identity verification.</p>
+                    <p className="text-xs text-gray-500 mb-2">Upload or capture a clear photo of any valid government-issued ID. Your photo will be validated automatically.</p>
 
                     {/* Camera view */}
                     {cameraOpen && (
@@ -1300,26 +1364,16 @@ export default function AuthPage() {
                       </div>
                     )}
 
-                    {/* Verify ID button */}
-                    {idPhoto && !idVerification?.isValid && (
-                      <button type="button" onClick={verifyId} disabled={idVerifying}
-                        className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-sm font-semibold hover:bg-amber-100 active:bg-amber-200 transition-colors disabled:opacity-60">
-                        {idVerifying ? (
-                          <>
-                            <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
-                            Verifying ID with AI...
-                          </>
-                        ) : (
-                          <>
-                            <Shield className="w-4 h-4" />
-                            Verify ID
-                          </>
-                        )}
-                      </button>
+                    {/* Auto-validation spinner */}
+                    {idPhoto && idVerifying && (
+                      <div className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-sm font-semibold">
+                        <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                        Validating ID photo...
+                      </div>
                     )}
 
-                    {/* Verification result */}
-                    {idVerification && (
+                    {/* Validation result */}
+                    {idVerification && !idVerifying && (
                       <div className={`mt-3 p-3 rounded-xl text-sm ${
                         idVerification.isValid
                           ? 'bg-green-50 border border-green-200'
@@ -1333,21 +1387,9 @@ export default function AuthPage() {
                           )}
                           <div>
                             <p className={`font-semibold ${idVerification.isValid ? 'text-green-800' : 'text-red-800'}`}>
-                              {idVerification.isValid ? 'ID Verified' : 'Verification Failed'}
+                              {idVerification.isValid ? 'ID Photo Accepted' : 'Validation Failed'}
                             </p>
-                            {idVerification.idType && idVerification.idType !== 'unknown' && (
-                              <p className="text-xs mt-0.5"><span className="font-medium">Type:</span> {idVerification.idType}</p>
-                            )}
-                            {idVerification.nameOnId && (
-                              <p className="text-xs mt-0.5"><span className="font-medium">Name on ID:</span> {idVerification.nameOnId}</p>
-                            )}
-                            {idVerification.confidence > 0 && (
-                              <p className="text-xs mt-0.5"><span className="font-medium">Confidence:</span> {idVerification.confidence}%</p>
-                            )}
                             <p className="text-xs mt-1 opacity-80">{idVerification.reason}</p>
-                            {idVerification.needsManualReview && (
-                              <p className="text-xs mt-1 font-medium text-amber-700">Your ID will be reviewed manually by an admin.</p>
-                            )}
                           </div>
                         </div>
                       </div>
