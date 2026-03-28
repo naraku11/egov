@@ -43,13 +43,25 @@ export const initSocket = (httpServer) => {
   // Create a new Socket.IO server, sharing the HTTP server's port.
   io = new Server(httpServer, {
     cors: {
-      // Allow the configured frontend origin to open WebSocket connections.
       origin: process.env.CLIENT_URL || 'http://localhost:3000',
       credentials: true,
     },
-    // Prefer the native WebSocket transport; fall back to HTTP long-polling
-    // for environments where WebSocket upgrades are blocked (some proxies).
+    // Prefer WebSocket; keep polling as fallback but upgrade ASAP.
     transports: ['websocket', 'polling'],
+    // Force the client to upgrade to WebSocket within 5 s.
+    // A shorter upgrade window means polling connections (which occupy an entry
+    // process slot on Hostinger) are released quickly.
+    upgradeTimeout: 5_000,
+    // Ping every 60 s (default 25 s) — fewer keep-alive round-trips per minute.
+    pingInterval: 60_000,
+    // Treat a client as disconnected if no pong arrives within 20 s.
+    pingTimeout: 20_000,
+    // 1 MB message cap — prevents large payloads from tying up a connection slot.
+    maxHttpBufferSize: 1e6,
+    // Disable per-message deflate on Socket.IO frames — the global gzip
+    // middleware already compresses HTTP responses; double-compressing wastes
+    // CPU cycles on a shared-hosting environment.
+    perMessageDeflate: false,
   });
 
   // Register handlers for each new client connection.

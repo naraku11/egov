@@ -117,7 +117,7 @@ export default function ServantDashboard() {
   /** DOM ref used to auto-scroll to the latest message in the conversation */
   const messagesEndRef = useRef(null);
 
-  /** setInterval ID for the 60-second heartbeat, cleared on unmount */
+  /** setInterval ID for the 120-second heartbeat, cleared on unmount */
   const heartbeatRef   = useRef(null);
 
   // ── Effects ─────────────────────────────────────────────────────────────────
@@ -130,13 +130,13 @@ export default function ServantDashboard() {
 
   /**
    * Heartbeat effect.
-   * Sends an immediate ping on mount, then repeats every 60 seconds.
+   * Sends an immediate ping on mount, then repeats every 120 seconds.
    * On unmount (navigate away or tab close) the status is set to OFFLINE.
    */
   useEffect(() => {
     const sendHeartbeat = () => api.patch('/servants/heartbeat').catch(() => {});
     sendHeartbeat(); // immediate ping so presence is visible right away
-    heartbeatRef.current = setInterval(sendHeartbeat, 60000);
+    heartbeatRef.current = setInterval(sendHeartbeat, 120000);
     return () => {
       clearInterval(heartbeatRef.current);
       // Mark servant offline when they leave the dashboard (navigate away or close tab)

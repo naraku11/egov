@@ -276,6 +276,20 @@ app.use(errorHandler);
 // ── Start server ──────────────────────────────────────────────────────────────
 
 httpServer.listen(PORT, () => {
+  // On Hostinger shared hosting every open HTTP connection counts as an "entry
+  // process". Tightening these timeouts ensures idle keep-alive connections are
+  // closed quickly so the 40-process slot limit is not exhausted.
+  //
+  // keepAliveTimeout (20 s) — close idle persistent connections well below the
+  //   host's reverse-proxy idle timeout (~60 s), freeing entry process slots fast.
+  // headersTimeout (25 s) — must be slightly above keepAliveTimeout to prevent
+  //   a Node.js bug where the connection closes before headers are fully sent.
+  // requestTimeout (25 s) — abort any request that takes more than 25 seconds
+  //   end-to-end (AI classify + DB heavy queries should still finish in time).
+  httpServer.keepAliveTimeout = 20_000;
+  httpServer.headersTimeout   = 25_000;
+  httpServer.requestTimeout   = 25_000;
+
   console.log(`\n🏛️  E-Gov Aloguinsan API running on port ${PORT}`);
   console.log(`📚 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 Health: http://localhost:${PORT}/health\n`);

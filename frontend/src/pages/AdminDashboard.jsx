@@ -709,7 +709,7 @@ export default function AdminDashboard() {
   /** Status filter value; 'ALL' means no status filter is applied */
   const [ticketStatusFilter, setTicketStatusFilter] = useState('ALL');
 
-  /** Interval ref for the 30-second servant list auto-poll */
+  /** Interval ref for the 120-second servant list auto-poll */
   const servantPollRef = useRef(null);
 
   // ── Effects ─────────────────────────────────────────────────────────────────
@@ -739,7 +739,7 @@ export default function AdminDashboard() {
    */
   useEffect(() => {
     if (tab === 'servants') {
-      servantPollRef.current = setInterval(() => fetchTabData('servants'), 30000);
+      servantPollRef.current = setInterval(() => fetchTabData('servants'), 120000);
     } else {
       clearInterval(servantPollRef.current);
     }
@@ -1370,7 +1370,7 @@ export default function AdminDashboard() {
                   <span className="text-green-600 font-medium">
                     {servants.filter(s => s.lastActiveAt && (Date.now() - new Date(s.lastActiveAt).getTime()) < 120000).length} online now
                   </span>
-                  &nbsp;· auto-refreshes every 30s
+                  &nbsp;· auto-refreshes every 2 min
                 </p>
               </div>
               {/* Opens the add-servant modal */}
