@@ -167,26 +167,22 @@ cd frontend && npm run preview   # Preview production build locally
 ### Citizen Flow
 - Trilingual interface (English / Filipino / Cebuano)
 - Register with email/phone + password + **OTP verification** (account not created until verified)
-- **Strong password enforcement** — minimum 8 characters, requires uppercase, lowercase, number, and special character; live strength indicator with rule checklist during registration
+- **Strong password enforcement** — minimum 8 characters, requires uppercase, lowercase, number, and special character; live strength indicator during registration
 - **OCR-based ID verification** — upload or camera-capture a government-issued ID; Tesseract.js (eng+fil) scans the document, matches the registrant's name, and detects Philippine ID keywords
 - **Three-tier ID verification results:**
-  - **Green** — name matched + ID keywords detected → auto-verified, proceed to OTP → auto-login on success
-  - **Blue** — ID accepted but name not matched → account created as PENDING_REVIEW, cannot login until admin approves; login screen shows reupload option
-  - **Red** — validation failed (unreadable, not an ID, etc.) → clear inputs, retry
-- **Camera capture** — use device camera (rear-facing preferred) to photograph ID directly from the registration form
+  - **Green** — name matched + ID keywords detected → auto-verified → auto-login after OTP
+  - **Blue** — ID accepted but name not matched → account created as PENDING_REVIEW, blocked from login until admin approves
+  - **Red** — validation failed (unreadable, not an ID) → retry
 - Login OTP: **SMS first** (Firebase) if phone provided, **email fallback** if SMS unavailable
-- Auto-fallback to email if Firebase SMS fails (rate limit, billing, etc.)
-- Login with phone number via **Firebase Phone Auth** (SMS OTP)
 - Submit concerns via text, voice-to-text, or category selection with file attachments
 - AI classifier routes concerns to the correct department automatically
 - Real-time ticket tracking with status timeline
 - Chat with assigned servant with **file attachments** (images, PDFs, docs, videos — up to 5 per message)
 - Star ratings and comments on resolved tickets
-- **Real-time notifications** — sound alerts, announcement popups, unread badge (citizens only; admin excluded)
+- **Real-time notifications** — sound alerts, announcement popups, unread badge
 - Browse announcements and barangay directory
 - Edit profile with avatar photo upload
 - **FAQs & Self-Help** section with department contact directory
-- **Terms and Conditions** agreement during registration
 
 ### Servant Flow
 - Dashboard with assigned tickets, priority indicators, and SLA deadlines
@@ -197,11 +193,13 @@ cd frontend && npm run preview   # Preview production build locally
 - **Real-time socket notifications** — ticket assignments, citizen replies (socket-only, no DB persistence)
 
 ### Admin Flow
-- Admin panel with tabs: Overview, Tickets, Servants, Citizens, SLA Breaches, Announcements, Directory
+- **Sidebar navigation** — Servants, Citizens, and Departments each have dedicated sidebar links (`/admin?tab=servants`, `/admin?tab=citizens`, `/admin?tab=departments`)
+- **Inline tab bar** — Overview, Tickets, SLA Breaches
 - System stats with 7-day trend chart and department breakdown
 - Manage servants (create, edit, remove with department assignment)
-- Manage citizens (edit, archive, delete — blocked if citizen has tickets)
-- **ID review workflow** — pending ID count badge on Citizens tab; full-screen ID photo viewer with Approve / Reject actions; status badges (pulsing amber for pending, blue for verified, red for rejected)
+- Manage citizens (edit, archive, delete — blocked if citizen has open tickets)
+- Manage departments (create, edit)
+- **ID review workflow** — pending ID count badge on Citizens tab; full-screen ID photo viewer with Approve / Reject actions
 - Archive/reactivate tickets (reactivation requires admin password)
 - Permanently delete tickets with cascade (messages, attachments, notifications)
 - Manage announcements (Info / Alert / Event categories, draft/published)
@@ -234,11 +232,11 @@ cd frontend && npm run preview   # Preview production build locally
 
 **Registration:** Account is **not created** until OTP is verified. Pending data is held in memory for 5 minutes.
 
-**Password policy:** Minimum 8 characters with at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character. Enforced on both client (live strength bar + rule checklist) and server. Applied to registration, password reset, and profile password change.
+**Password policy:** Minimum 8 characters with at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character. Enforced on both client and server. Applied to registration, password reset, and profile password change.
 
 **Email validation:** Registration checks email format, blocks disposable providers (mailinator, yopmail, etc.), and verifies domain MX records.
 
-**SMS fallback:** If Firebase SMS fails for any reason (rate limit, billing, captcha), the system automatically sends an email OTP instead. Users can also manually choose "Send to email instead".
+**SMS fallback:** If Firebase SMS fails for any reason (rate limit, billing, captcha), the system automatically sends an email OTP instead.
 
 ### ID Verification Flow
 
@@ -251,25 +249,14 @@ Citizens must upload or capture a valid government-issued ID during registration
 | 3. Name matching | Splits registered name into parts, checks 50%+ match against normalized OCR text |
 | 4. ID keyword detection | Scans for 25+ Philippine ID keywords (republic, philippines, driver, license, passport, voter, sss, etc.) |
 
-**Result outcomes:**
-
 | Result | Color | Condition | Effect |
 |--------|-------|-----------|--------|
 | Verified | Green | Name matched + ID keywords found | `idStatus: VERIFIED` — auto-login after OTP |
-| Pending Review | Blue | ID accepted but name not matched | `idStatus: PENDING_REVIEW` — account created, cannot login until admin approves |
-| Failed | Red | No ID keywords, unreadable, not an ID | Registration blocked — user must clear and retry |
+| Pending Review | Blue | ID accepted but name not matched | `idStatus: PENDING_REVIEW` — cannot login until admin approves |
+| Failed | Red | No ID keywords, unreadable, not an ID | Registration blocked — user must retry |
 | OCR Failure | Blue | Tesseract error (slow device, etc.) | Graceful fallback — accepted for manual staff review |
 
-**Admin review:** Admin sees pending ID count badge on Citizens tab. Review modal shows full-size ID photo + citizen info with Approve / Reject buttons. Approved → `VERIFIED` (user can login). Rejected → `REJECTED` (user sees rejection message + reupload option on login screen).
-
-**ID reupload:** Users with `PENDING_REVIEW` or `REJECTED` status can reupload a new ID from the login screen. The endpoint validates credentials before accepting the new photo. If the new OCR matches, status changes to `VERIFIED` immediately.
-
-### Password Visibility Toggle
-
-All password fields (login, registration, reset, confirm) have show/hide eye buttons optimized for cross-browser compatibility:
-- Native browser password reveal hidden via CSS (`::-ms-reveal` for Edge, `::-webkit-credentials-auto-fill-button` for Chrome)
-- Toggle buttons use `tabIndex={-1}` (no focus steal), `pointer-events-none` on SVG icons (Safari fix), `select-none`, and `aria-label` for accessibility
-- `autoComplete="new-password"` on registration/reset fields prevents autofill conflicts
+**ID reupload:** Users with `PENDING_REVIEW` or `REJECTED` status can reupload from the login screen. If the new OCR matches, status changes to `VERIFIED` immediately.
 
 ---
 
@@ -284,7 +271,6 @@ All password fields (login, registration, reset, confirm) have show/hide eye but
 - **Sound alerts** — two-tone ding on new notifications
 - **Announcement popups** — toast notification when admin publishes a new announcement
 - **Unread badge** — notification bell with count badge (citizens and servants only)
-- Notification dropdown in sidebar (desktop) and header bar (mobile)
 
 ---
 
@@ -323,20 +309,20 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 | POST | `/verify-id` | — | Verify uploaded ID photo (multipart: image + name). Returns validity, ID type, name match |
 | POST | `/login` | — | Legacy resident login (email/phone + password) |
 | POST | `/servant/login` | — | Legacy servant login (email + password) |
-| POST | `/unified-login` | — | Single login: auto-detects user vs servant. Returns OTP for citizens, JWT for servants/admin. Blocks `PENDING_REVIEW` / `REJECTED` users with error code |
+| POST | `/unified-login` | — | Single login: auto-detects user vs servant. Returns OTP for citizens, JWT for servants/admin |
 | POST | `/otp/request` | — | Request SMS OTP for phone-based login |
-| POST | `/otp/verify` | — | Verify OTP and issue JWT (creates guest account if needed) |
-| POST | `/verify-auth-otp` | — | Verify 6-digit auth OTP after login/registration. For `PENDING_REVIEW` registrations, returns success without JWT |
+| POST | `/otp/verify` | — | Verify OTP and issue JWT |
+| POST | `/verify-auth-otp` | — | Verify 6-digit auth OTP after login/registration |
 | POST | `/resend-otp` | — | Resend auth OTP (supports `forceEmail` flag for SMS fallback) |
-| POST | `/firebase/verify-phone` | — | Exchange Firebase Phone Auth token for local JWT (passwordless login) |
-| POST | `/verify-phone-otp` | — | Verify Firebase phone OTP during login/register flow. Same `PENDING_REVIEW` handling as verify-auth-otp |
+| POST | `/firebase/verify-phone` | — | Exchange Firebase Phone Auth token for local JWT |
+| POST | `/verify-phone-otp` | — | Verify Firebase phone OTP during login/register flow |
 | POST | `/forgot-password` | — | Request 6-digit password reset code via email/SMS |
-| POST | `/reset-password` | — | Verify reset code and set new password (strong password enforced) |
-| POST | `/reupload-id` | — | Reupload ID photo for `PENDING_REVIEW` / `REJECTED` users (multipart: image + credentials + OCR result) |
-| GET | `/profile` | JWT | Retrieve authenticated user's or servant's profile (password omitted) |
+| POST | `/reset-password` | — | Verify reset code and set new password |
+| POST | `/reupload-id` | — | Reupload ID photo for `PENDING_REVIEW` / `REJECTED` users (multipart) |
+| GET | `/profile` | JWT | Retrieve authenticated user's or servant's profile |
 | PUT | `/profile` | JWT | Update profile fields + optional avatar upload (multipart) |
 
-### Tickets (`/api/tickets`) — 9 endpoints
+### Tickets (`/api/tickets`) — 10 endpoints
 
 | Method | Endpoint | Auth | Role | Description |
 |--------|----------|:----:|:----:|-------------|
@@ -357,14 +343,14 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 |--------|----------|:----:|-------------|
 | GET | `/stats` | ADMIN | Dashboard: totals, breakdowns by status/priority/department, avg rating, SLA breaches, 7-day trend |
 | GET | `/tickets` | ADMIN | Paginated tickets (filter: status, priority, departmentId; default 20/page) |
-| GET | `/users` | ADMIN | All citizen accounts (CLIENT role) with ticket count, idPhotoUrl, idStatus |
+| GET | `/users` | ADMIN | All citizen accounts with ticket count, idPhotoUrl, idStatus |
 | PUT | `/users/:id` | ADMIN | Edit citizen (name, email, phone, barangay, address, isVerified, password) |
 | DELETE | `/users/:id` | ADMIN | Delete citizen (blocked if has open tickets) |
-| PATCH | `/users/:id/archive` | ADMIN | Toggle citizen archive status (enables/disables login) |
+| PATCH | `/users/:id/archive` | ADMIN | Toggle citizen archive status |
 | PATCH | `/users/:id/id-review` | ADMIN | Approve or reject citizen ID photo (`action: 'approve' \| 'reject'`) |
 | GET | `/reports` | ADMIN | Analytics: KPIs, servant performance, daily trend (query: `range=1\|7\|15\|30\|90\|365\|all`) |
 | GET | `/sla-breaches` | ADMIN | Open tickets past SLA deadline (ordered by oldest first) |
-| DELETE | `/tickets/:id` | ADMIN | Permanently delete ticket + cascade (messages, attachments, notifications, feedback) |
+| DELETE | `/tickets/:id` | ADMIN | Permanently delete ticket + cascade |
 | PATCH | `/tickets/:id/archive` | ADMIN | Archive (→CLOSED) or reactivate (→PENDING) ticket. Reactivation requires admin password |
 
 ### Servants (`/api/servants`) — 7 endpoints
@@ -372,10 +358,10 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 | Method | Endpoint | Auth | Description |
 |--------|----------|:----:|-------------|
 | GET | `/stats` | SERVANT | My stats: total, pending, in-progress, resolved, urgent, avg rating |
-| PATCH | `/heartbeat` | SERVANT | Update `lastActiveAt` timestamp (called every ~60s by frontend) |
+| PATCH | `/heartbeat` | SERVANT | Update `lastActiveAt` timestamp (called every ~120s by frontend) |
 | PATCH | `/status` | SERVANT | Update availability (AVAILABLE / BUSY / OFFLINE) |
 | GET | `/` | ADMIN | All servants with department, ticket count (sorted A-Z) |
-| POST | `/` | ADMIN | Create servant (multipart: avatar optional; default password "servant123") |
+| POST | `/` | ADMIN | Create servant (multipart: avatar optional) |
 | PUT | `/:id` | ADMIN | Update servant (multipart: avatar optional, old avatar deleted on replace) |
 | DELETE | `/:id` | ADMIN | Delete servant (open tickets re-queued: servantId cleared, status→PENDING) |
 
@@ -438,7 +424,18 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 - Mobile: hamburger-triggered slide-in drawer with swipe-to-close gesture
 - Role-aware navigation links, notification bell with unread badge (citizens + servants only)
 - Language selector, profile section with avatar and status indicator
-- Quick access: Submit Concern button on citizen dashboard
+
+### Admin Sidebar Links
+
+| Link | Route | Description |
+|------|-------|-------------|
+| Admin Panel | `/admin` | Overview, Tickets, SLA Breaches (inline tabs) |
+| Servants | `/admin?tab=servants` | Servant management |
+| Citizens | `/admin?tab=citizens` | Citizen management + ID review |
+| Departments | `/admin?tab=departments` | Department management |
+| Announcements | `/announcements` | Announcement management |
+| Directory | `/directory` | Barangay directory |
+| Reports | `/reports` | Analytics |
 
 ---
 
@@ -459,7 +456,7 @@ egov/
 │   │   │   └── ticketController.js    # Ticket CRUD, messaging, AI classification, file attachments
 │   │   ├── routes/
 │   │   │   ├── auth.js                # 16 endpoints — registration, login, OTP, password reset, ID reupload, profile
-│   │   │   ├── tickets.js             # 9 endpoints — submit, list, chat, escalate, feedback
+│   │   │   ├── tickets.js             # 10 endpoints — submit, list, chat, escalate, feedback
 │   │   │   ├── admin.js               # 11 endpoints — stats, users, reports, SLA, archive, ID review
 │   │   │   ├── servants.js            # 7 endpoints — stats, heartbeat, status, CRUD
 │   │   │   ├── announcements.js       # 6 endpoints — public list, admin CRUD, Socket.IO broadcast
@@ -467,7 +464,7 @@ egov/
 │   │   │   ├── directory.js           # 5 endpoints — public list, admin CRUD
 │   │   │   └── notifications.js       # 3 endpoints — list, mark read, mark all read
 │   │   ├── middleware/
-│   │   │   ├── auth.js                # JWT verification + role guards (authenticate, requireAdmin, etc.)
+│   │   │   ├── auth.js                # JWT verification + role guards
 │   │   │   ├── upload.js              # Multer: avatarUpload, idUpload, upload (attachments)
 │   │   │   └── errorHandler.js        # Global error handler
 │   │   ├── services/
@@ -475,7 +472,7 @@ egov/
 │   │   │   ├── idVerifier.js          # ID photo verification service
 │   │   │   └── notification.js        # Email, in-app notification generation, servant socket notifications
 │   │   └── lib/
-│   │       ├── prisma.js              # Singleton Prisma Client
+│   │       ├── prisma.js              # Singleton Prisma Client (pool: 3 connections)
 │   │       ├── socket.js              # Socket.IO init + event handlers
 │   │       └── firebase.js            # Firebase Admin SDK for phone auth
 │   │
@@ -485,22 +482,21 @@ egov/
 │   │   └── attachments/               # Ticket/message file attachments
 │   │
 │   ├── firebase-service-account.json  # Firebase credentials (not in git)
-│   ├── .env.example                   # Environment template with all variables
+│   ├── .env.example                   # Environment template
 │   ├── .env                           # Actual credentials (not in git)
 │   └── package.json                   # 15 deps + 1 devDep (nodemon)
 │
 ├── frontend/
 │   ├── public/
 │   │   ├── notification.mp3           # Two-tone notification sound
-│   │   ├── .htaccess                  # Apache: SPA fallback + .builds blocking
+│   │   ├── .htaccess                  # Apache: SPA fallback
 │   │   ├── site.webmanifest           # PWA manifest
-│   │   ├── favicon.svg                # App icon
-│   │   └── web-app-manifest-*.png     # PWA icons
+│   │   └── favicon.svg                # App icon
 │   │
 │   ├── src/
 │   │   ├── main.jsx                   # React entry point
 │   │   ├── App.jsx                    # Root router — route guards, lazy loading, Suspense
-│   │   ├── index.css                  # Global styles: Tailwind, touch targets, safe-area, cross-browser password fixes
+│   │   ├── index.css                  # Global styles: Tailwind, touch targets, safe-area
 │   │   │
 │   │   ├── pages/                     # 12 page components
 │   │   │   ├── LandingPage.jsx        # Public: hero, features, departments, CTA
@@ -509,16 +505,16 @@ egov/
 │   │   │   ├── SubmitConcern.jsx      # 2-step: text/voice/category → AI routing + file upload
 │   │   │   ├── TrackTicket.jsx        # Ticket detail: status timeline, real-time chat, feedback
 │   │   │   ├── ServantDashboard.jsx   # Servant: assigned tickets, actions, stats
-│   │   │   ├── AdminDashboard.jsx     # Admin: 7-tab panel + ID review modal (overview/tickets/servants/citizens/SLA/announcements/directory)
+│   │   │   ├── AdminDashboard.jsx     # Admin: inline tabs (overview/tickets/sla) + sidebar tabs (servants/citizens/departments)
 │   │   │   ├── ReportsPage.jsx        # Analytics: period selector, KPIs, charts, CSV/PDF export
 │   │   │   ├── AnnouncementsPage.jsx  # Public announcements with category filter
 │   │   │   ├── DirectoryPage.jsx      # Official directory with category filter
-│   │   │   ├── FaqPage.jsx            # FAQs (5 sections, accordion) + self-help directory (6 departments)
-│   │   │   └── TermsPage.jsx          # Terms and conditions (11 sections)
+│   │   │   ├── FaqPage.jsx            # FAQs (5 sections, accordion) + self-help directory
+│   │   │   └── TermsPage.jsx          # Terms and conditions
 │   │   │
 │   │   ├── components/                # 5 reusable components
 │   │   │   ├── SidebarLayout.jsx      # Collapsible sidebar (desktop) + mobile drawer with swipe-to-close
-│   │   │   ├── Navbar.jsx             # Top navbar for public/unauthenticated pages
+│   │   │   ├── Navbar.jsx             # Top navbar for public pages
 │   │   │   ├── ProfileModal.jsx       # Profile editor modal (bottom-sheet on mobile)
 │   │   │   ├── StatusBadge.jsx        # Ticket status/priority badges
 │   │   │   └── ErrorBoundary.jsx      # React error boundary wrapper
@@ -529,7 +525,7 @@ egov/
 │   │   │   └── SocketContext.jsx      # Socket.IO client tied to auth state
 │   │   │
 │   │   ├── lib/
-│   │   │   └── firebase.js            # Firebase client SDK init (RecaptchaVerifier, signInWithPhoneNumber)
+│   │   │   └── firebase.js            # Firebase client SDK init
 │   │   │
 │   │   ├── api/
 │   │   │   └── client.js              # Axios instance with JWT interceptor + base URL
@@ -554,7 +550,7 @@ egov/
 │   ├── 07-add-user-id-photo.sql       # ALTER: idPhotoUrl column
 │   └── 08-add-user-id-status.sql      # ALTER: idStatus enum column + backfill
 │
-├── .gitignore                         # node_modules, .env, uploads/*, .claude/, dist/
+├── .gitignore
 ├── .nvmrc                             # Node.js version: 18
 └── README.md
 ```
@@ -576,17 +572,24 @@ egov/
 
 ---
 
-## Performance
+## Performance & Resource Limits
 
-- **Gzip compression** on all HTTP responses via `compression` middleware (60-80% size reduction)
-- **Route-level code splitting** — heavy pages (AdminDashboard, ReportsPage, etc.) lazy-loaded with `React.lazy()` + `Suspense`, keeping the initial JS bundle small
-- **Batch DB queries** — admin stats and reports endpoints use bulk fetches + in-memory grouping instead of N+1 sequential queries (e.g. 365-day trend: 2 queries instead of 730)
-- **Parallelised queries** — independent database calls run concurrently via `Promise.all()`
-- **Static asset caching** — hashed JS/CSS cached 7 days; uploaded files cached 7 days with etag
-- **Lean auth middleware** — password hash excluded from `req.user`; fetched on-demand only when needed
-- **Client-side OCR** — Tesseract.js runs in the browser, no server round-trip for ID verification; progress bar keeps users informed
-- **Reduced motion** — respects `prefers-reduced-motion` to disable animations on low-power devices
-- **GPU-friendly** — blur effects hidden on mobile to prevent GPU-heavy rendering on low-end phones
+Tuned for Hostinger Business shared hosting (40 entry process limit):
+
+| Optimization | Value | Effect |
+|---|---|---|
+| HTTP `keepAliveTimeout` | 20 s | Idle connections released in 20 s (vs Node default ~5 min) |
+| HTTP `requestTimeout` | 25 s | Hanging requests terminated, freeing process slots |
+| Socket.IO `upgradeTimeout` | 5 s | Polling connections upgrade to WebSocket within 5 s |
+| Socket.IO `pingInterval` | 60 s | Halved ping frequency vs default 25 s |
+| Prisma connection pool | 3 | Reduced DB connections held open concurrently |
+| Servant heartbeat | 120 s | ~5–6 req/min from all servants vs ~11 req/min |
+| Admin servant poll | 120 s | 4× fewer HTTP hits when admin views Servants tab |
+| Gzip compression | all responses | 60–80% payload reduction |
+| Route code splitting | lazy-loaded pages | Small initial JS bundle |
+| Batch DB queries | admin stats/reports | 2 queries for 365-day trend instead of 730 |
+| Static asset caching | JS/CSS: 7 days | Browser cache eliminates repeat downloads |
+| Client-side OCR | Tesseract.js | No server round-trip for ID verification |
 
 ---
 
@@ -594,42 +597,27 @@ egov/
 
 - JWT authentication (7-day expiry)
 - bcrypt password hashing (cost factor 10)
-- **Strong password policy** — minimum 8 characters, at least 1 uppercase, 1 lowercase, 1 number, 1 special character; enforced on registration, reset, and profile update (both client and server)
-- Password hash never stored on request context (fetched on-demand for profile updates only)
+- Strong password policy enforced on registration, reset, and profile update (client + server)
 - OTP verification for citizen accounts (SMS primary, email fallback)
-- OCR-based ID verification with admin review workflow (Tesseract.js client-side)
-- **ID status gating** — `PENDING_REVIEW` and `REJECTED` users blocked from login with specific error codes; reupload requires credential verification
+- OCR-based ID verification with admin review workflow
+- `PENDING_REVIEW` and `REJECTED` users blocked from login; reupload requires credential verification
 - Email validation: format check, disposable domain blocking, MX record verification
 - Registration deferred until OTP verified (no unverified accounts in DB)
-- Rate limiting (200 req/15 min global, 20 req/15 min auth)
+- Rate limiting: 200 req/15 min global, 20 req/15 min auth
 - Helmet.js security headers
 - CORS with origin whitelist
-- Gzip response compression
 - File upload validation (type + size limits, max 5 per message)
 - Role-based access control (CLIENT / SERVANT / ADMIN)
-- Terms and Conditions agreement required during registration
-- **Cross-browser password field hardening** — native reveal buttons suppressed (`::-ms-reveal`, `::-webkit-credentials-auto-fill-button`); custom toggle with accessibility labels
 
 ---
 
-## Mobile Optimization
+## Mobile
 
-- **Responsive sidebar layout** — collapsible desktop sidebar; slide-in drawer with swipe-to-close on mobile
-- **Body scroll lock** — background content locked when mobile drawer or modal is open
-- **44px touch targets** — all interactive elements meet minimum recommended touch size
-- **iOS auto-zoom prevention** — 16px font on all input fields
-- **Safe-area insets** — fixed headers, footers, and drawers respect iPhone notch / Dynamic Island
-- **Camera capture** — `getUserMedia` with rear-camera preference and iOS fallback
-- **Stream cleanup** — camera streams stopped on component unmount (prevents battery drain)
-- **Dynamic viewport height** — `dvh` units adapt to mobile keyboard presence
-- **Notification dropdown** — repositioned for mobile header bar (right-aligned, viewport-constrained)
-- **Bottom-sheet modals** — ProfileModal slides up from bottom on mobile for native UX
-- **Horizontal scroll navigation** — admin tabs and FAQ sections scroll horizontally on mobile instead of stacking
-- **Responsive admin header** — flex-col stacking on mobile, flex-row on desktop for buttons and titles
-- **Message bubble overflow** — `break-words` + responsive max-width prevents horizontal scroll in chat
-- **Reduced motion** — animations disabled for users with `prefers-reduced-motion` preference
-- **PWA installable** from browser (Android + iOS)
-- **Split-panel auth page** — branding panel on desktop, compact form on mobile
+- Collapsible desktop sidebar; slide-in drawer with swipe-to-close on mobile
+- 44px touch targets, 16px inputs (iOS auto-zoom prevention), safe-area insets
+- Camera capture with rear-facing preference and iOS fallback
+- PWA installable from browser (Android + iOS)
+- Reduced motion support (`prefers-reduced-motion`)
 
 ---
 
