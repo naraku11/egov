@@ -995,28 +995,31 @@ export default function AdminDashboard() {
         </div>
 
         {/* ── Tab Navigation ───────────────────────────────────────────────────
-            Pill-style tab bar. The SLA tab gets a red count badge when there
-            are active breaches.
+            Only shown for inline tabs (overview / tickets / sla).
+            Servants, Citizens, and Departments are accessed from the sidebar
+            and render as standalone pages — no tab bar needed.
         ────────────────────────────────────────────────────────────────────── */}
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6 w-full overflow-x-auto sm:w-auto sm:inline-flex">
-          {TABS.map(t => (
-            <button
-              key={t}
-              onClick={() => loadTabData(t)}
-              className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 min-h-[40px] ${
-                tab === t ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {t === 'sla' ? 'SLA Breaches' : t.charAt(0).toUpperCase() + t.slice(1)}
-              {/* Red badge on SLA tab when breaches exist */}
-              {t === 'sla' && stats.slaBreaches > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                  {stats.slaBreaches > 9 ? '9+' : stats.slaBreaches}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+        {!['servants', 'citizens', 'departments'].includes(tab) && (
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6 w-full overflow-x-auto sm:w-auto sm:inline-flex">
+            {TABS.map(t => (
+              <button
+                key={t}
+                onClick={() => loadTabData(t)}
+                className={`relative px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 min-h-[40px] ${
+                  tab === t ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {t === 'sla' ? 'SLA Breaches' : t.charAt(0).toUpperCase() + t.slice(1)}
+                {/* Red badge on SLA tab when breaches exist */}
+                {t === 'sla' && stats.slaBreaches > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                    {stats.slaBreaches > 9 ? '9+' : stats.slaBreaches}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* ── OVERVIEW TAB ─────────────────────────────────────────────────────
             KPI cards, three charts (trend line, status pie, dept bar), and a
