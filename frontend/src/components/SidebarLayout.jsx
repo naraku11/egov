@@ -218,10 +218,12 @@ export default function SidebarLayout({ children }) {
         { to: '/announcements',          icon: Megaphone,       label: 'Announcements' },
         { to: '/directory',              icon: BookOpen,        label: 'Directory' },
         { to: '/reports',                icon: BarChart2,       label: 'Reports' },
+        { to: '/faq',                    icon: HelpCircle,      label: 'Help & FAQs' },
       ]
     : isServant
     ? [
         { to: '/servant', icon: ClipboardList, label: t('myAssignments') },
+        { to: '/faq',     icon: HelpCircle,    label: 'Help & FAQs' },
       ]
     : [
         { to: '/dashboard', icon: Home,            label: t('dashboard') },

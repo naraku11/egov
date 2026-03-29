@@ -185,7 +185,7 @@ cd frontend && npm run preview   # Preview production build locally
 - **Real-time notifications** — sound alerts, announcement popups, unread badge
 - Browse announcements and barangay directory
 - Edit profile with avatar photo upload
-- **FAQs & Self-Help** section with department contact directory
+- **FAQs & Self-Help** section with department contact directory (role-aware — citizens see citizen FAQ)
 
 ### Servant Flow
 - Dashboard with assigned tickets, priority indicators, and SLA deadlines
@@ -194,6 +194,7 @@ cd frontend && npm run preview   # Preview production build locally
 - Escalate tickets, update status (in-progress / resolved)
 - Update availability (Available / Busy / Offline)
 - **Real-time socket notifications** — ticket assignments, citizen replies (socket-only, no DB persistence)
+- **Help & FAQs** — servant-specific help center covering ticket management, escalation, SLA, presence
 
 ### Admin Flow
 - **Sidebar navigation** — Servants, Citizens, and Departments each have dedicated sidebar links (`/admin?tab=servants`, `/admin?tab=citizens`, `/admin?tab=departments`)
@@ -208,6 +209,7 @@ cd frontend && npm run preview   # Preview production build locally
 - Manage announcements (Info / Alert / Event categories, draft/published)
 - Real-time announcement broadcast via Socket.IO with popup notifications
 - Manage barangay directory (officials, emergency services, offices)
+- **Help & FAQs** — admin-specific help center covering ticket management, servant/citizen management, departments, announcements, and reports
 
 ### Reports (Admin)
 - Standalone analytics page accessible from the admin sidebar (`/reports`)
@@ -511,7 +513,7 @@ egov/
 │   │   │   ├── ReportsPage.jsx        # Analytics: period selector, KPIs, charts, CSV/PDF export
 │   │   │   ├── AnnouncementsPage.jsx  # Public announcements with category filter
 │   │   │   ├── DirectoryPage.jsx      # Official directory with category filter
-│   │   │   ├── FaqPage.jsx            # FAQs (5 sections, accordion) + self-help directory
+│   │   │   ├── FaqPage.jsx            # Role-aware help center: citizen FAQ (5 sections) / servant FAQ (5 sections) / admin FAQ (6 sections)
 │   │   │   └── TermsPage.jsx          # Terms and conditions
 │   │   │
 │   │   ├── components/                # 5 reusable components

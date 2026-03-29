@@ -1,10 +1,15 @@
 import { useState } from 'react';
-import { ChevronDown, HelpCircle, FileText, Phone, Mail, MapPin, Clock, Shield, MessageSquare } from 'lucide-react';
+import {
+  ChevronDown, HelpCircle, FileText, Phone, Clock, Shield,
+  MessageSquare, ClipboardList, Users, BarChart2, Megaphone,
+  Building2, UserCog, AlertTriangle, ShieldCheck,
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import SidebarLayout from '../components/SidebarLayout.jsx';
 import Navbar from '../components/Navbar.jsx';
 
-const FAQ_SECTIONS = [
+// ── Citizen FAQ ───────────────────────────────────────────────────────────────
+const CITIZEN_FAQ = [
   {
     title: 'Getting Started',
     icon: HelpCircle,
@@ -12,19 +17,19 @@ const FAQ_SECTIONS = [
     items: [
       {
         q: 'How do I register for an account?',
-        a: 'Click "Register" on the login page. Fill in your name, email or phone number, barangay, and password. You must also upload a valid government-issued ID for verification. After submitting, you will receive an OTP (one-time password) via SMS or email to verify your identity.',
+        a: 'Click "Register" on the login page. Fill in your name, email or phone number, barangay, and password. You must also upload a valid government-issued ID for verification. After submitting, you will receive an OTP via SMS or email to verify your identity.',
       },
       {
         q: 'What types of ID are accepted for verification?',
-        a: 'Any valid government-issued ID is accepted, including: National ID, PhilSys ID, Driver\'s License, Passport, Voter\'s ID, SSS/GSIS/PhilHealth ID, Postal ID, Barangay Certificate with photo, or Senior Citizen / PWD ID.',
+        a: 'Any valid government-issued ID is accepted: National ID, PhilSys ID, Driver\'s License, Passport, Voter\'s ID, SSS/GSIS/PhilHealth ID, Postal ID, Barangay Certificate with photo, or Senior Citizen / PWD ID.',
       },
       {
         q: 'I did not receive my OTP. What should I do?',
-        a: 'If you registered with a phone number, the system will try to send an SMS first. If SMS fails (due to network issues), it automatically falls back to email. You can also click "Send to email instead" to manually request an email OTP. Check your spam/junk folder if using email.',
+        a: 'If you registered with a phone number, SMS is sent first. If SMS fails, the system automatically falls back to email. You can also click "Send to email instead" to request an email OTP manually. Check your spam folder.',
       },
       {
         q: 'Can I use the portal in my local language?',
-        a: 'Yes! The portal supports three languages: English, Filipino (Tagalog), and Cebuano (Bisaya). Use the language selector in the sidebar to switch at any time.',
+        a: 'Yes! The portal supports English, Filipino (Tagalog), and Cebuano (Bisaya). Use the language selector in the sidebar to switch at any time.',
       },
     ],
   },
@@ -35,19 +40,19 @@ const FAQ_SECTIONS = [
     items: [
       {
         q: 'How do I submit a concern or complaint?',
-        a: 'Go to "Submit Concern" from the sidebar or dashboard. Describe your concern in detail — you can type in English, Filipino, or Cebuano, or use voice input on mobile. The AI system will automatically classify your concern and route it to the appropriate government department.',
+        a: 'Go to "Submit Concern" from the sidebar or dashboard. Describe your concern in detail — you can type in any of the three supported languages, or use voice input on mobile. The AI will automatically route it to the right department.',
       },
       {
-        q: 'Can I attach photos or documents to my concern?',
-        a: 'Yes, you can upload up to 5 files (photos, PDFs, documents, or videos) when submitting a concern. Each file can be up to 10MB. You can also send file attachments in chat messages with the assigned servant.',
+        q: 'Can I attach photos or documents?',
+        a: 'Yes, up to 5 files (photos, PDFs, documents, or videos) per submission. Each file can be up to 10 MB. You can also attach files in chat messages with the assigned servant.',
       },
       {
         q: 'How is my concern routed to the right department?',
-        a: 'Our AI-powered classification system analyzes your concern text and automatically determines which government department can best handle it. You can review the suggested department before submitting and change it if needed.',
+        a: 'An AI classifier analyzes your concern text and automatically determines which department can best handle it. You can review the suggested department before submitting and change it if needed.',
       },
       {
         q: 'What are the different ticket statuses?',
-        a: 'Pending — your concern has been submitted and is awaiting assignment. Assigned — a public servant has been assigned to handle it. In Progress — the servant is actively working on your concern. Resolved — the concern has been addressed. Escalated — the concern has been elevated to a higher authority for resolution.',
+        a: 'Pending — submitted and awaiting assignment. Assigned — a servant has been assigned. In Progress — actively being worked on. Resolved — addressed. Escalated — elevated for higher-priority handling.',
       },
     ],
   },
@@ -58,15 +63,15 @@ const FAQ_SECTIONS = [
     items: [
       {
         q: 'How do I track my submitted concern?',
-        a: 'Go to "My Concerns" from the sidebar. You\'ll see all your submitted tickets with their current status. Click on any ticket to view its full details, status timeline, and chat with the assigned servant.',
+        a: 'Go to "My Concerns" in the sidebar. You\'ll see all tickets with their current status. Click any ticket to view its full details, status timeline, and chat.',
       },
       {
-        q: 'Can I communicate directly with the assigned servant?',
-        a: 'Yes! Each ticket has a built-in chat feature. Once a servant is assigned, you can send messages and file attachments directly to them. You\'ll receive real-time notifications when they respond.',
+        q: 'Can I communicate with the assigned servant?',
+        a: 'Yes! Each ticket has a built-in chat. Once a servant is assigned, you can send messages and file attachments. You\'ll receive real-time notifications when they respond.',
       },
       {
         q: 'How will I know when there are updates?',
-        a: 'You will receive in-app notifications (with sound alerts) for status changes, new messages, and important updates. Notifications appear in the sidebar and as popup alerts.',
+        a: 'You receive in-app notifications (with sound alerts) for status changes, new messages, and important updates. Notifications appear in the sidebar and as popup alerts.',
       },
     ],
   },
@@ -77,15 +82,15 @@ const FAQ_SECTIONS = [
     items: [
       {
         q: 'How long will it take to resolve my concern?',
-        a: 'Resolution times depend on the priority level: Urgent concerns (emergencies, public safety) — 4 hours. Normal concerns (standard requests) — 48 hours. Low priority (minor inquiries) — 5 days. These are Service Level Agreement (SLA) targets that the government aims to meet.',
+        a: 'Urgent — 4 hours. Normal — 48 hours. Low — 5 days. These are SLA targets the government aims to meet.',
       },
       {
         q: 'What happens if my concern is not resolved on time?',
-        a: 'If the SLA deadline passes without resolution, the ticket is flagged as an SLA breach. The admin team monitors all breaches and takes action to expedite resolution.',
+        a: 'If the SLA deadline passes without resolution, the ticket is flagged as an SLA breach. The admin monitors all breaches and takes action to expedite resolution.',
       },
       {
         q: 'Can I rate the service I received?',
-        a: 'Yes! Once your concern is marked as Resolved, you can submit a star rating (1-5) and an optional comment about the service quality. Your feedback helps improve government services.',
+        a: 'Yes! Once your concern is marked Resolved, you can submit a star rating (1–5) and an optional comment. Your feedback helps improve government services.',
       },
     ],
   },
@@ -96,64 +101,275 @@ const FAQ_SECTIONS = [
     items: [
       {
         q: 'How is my personal information protected?',
-        a: 'Your data is protected with industry-standard security: encrypted passwords (bcrypt), JWT-based authentication, secure HTTPS connections, and role-based access control. Your ID photo is used solely for identity verification and is stored securely.',
+        a: 'Your data is protected with encrypted passwords (bcrypt), JWT-based authentication, secure HTTPS connections, and role-based access control. Your ID photo is used solely for identity verification.',
       },
       {
         q: 'Can I update my profile information?',
-        a: 'Yes, click your profile in the sidebar and select "Edit Profile" to update your name, contact information, barangay, or profile photo.',
+        a: 'Yes, click your profile in the sidebar and select "Edit Profile" to update your name, contact details, barangay, or profile photo.',
       },
       {
         q: 'I forgot my password. How do I reset it?',
-        a: 'On the login page, click "Forgot password?" Enter your email address or phone number, and you\'ll receive a 6-digit reset code. Enter the code along with your new password to reset it.',
+        a: 'On the login page, click "Forgot password?" Enter your email or phone number and you\'ll receive a 6-digit reset code. Enter the code along with your new password to reset it.',
       },
     ],
   },
 ];
 
+// ── Servant FAQ ───────────────────────────────────────────────────────────────
+const SERVANT_FAQ = [
+  {
+    title: 'Getting Started',
+    icon: HelpCircle,
+    color: 'text-blue-600 bg-blue-50',
+    items: [
+      {
+        q: 'How do I log in as a public servant?',
+        a: 'Use the login page with your government email address and the password provided by the admin. Servants log in directly — no OTP is required. Contact the admin if you need your credentials reset.',
+      },
+      {
+        q: 'How do I change my password?',
+        a: 'Click your profile in the sidebar and select "Edit Profile." You can set a new password there. Passwords must be at least 8 characters with uppercase, lowercase, a number, and a special character.',
+      },
+      {
+        q: 'How do I set my availability status?',
+        a: 'Click your status indicator in the sidebar. You can set yourself to Available (accepting tickets), Busy (working on existing tickets), or Offline. Your status is visible to the admin and helps with workload assignment.',
+      },
+    ],
+  },
+  {
+    title: 'Managing Tickets',
+    icon: ClipboardList,
+    color: 'text-green-600 bg-green-50',
+    items: [
+      {
+        q: 'How are tickets assigned to me?',
+        a: 'Tickets can be assigned by the admin or self-assigned by any servant in your department. You will receive a real-time notification when a ticket is assigned to you.',
+      },
+      {
+        q: 'How do I update a ticket\'s status?',
+        a: 'Open the ticket from your dashboard, then use the status control to move it through: Pending → In Progress → Resolved. Each status change notifies the citizen automatically.',
+      },
+      {
+        q: 'When should I escalate a ticket?',
+        a: 'Escalate when a concern requires resources, authority, or expertise beyond your scope — for example, issues involving multiple departments, legal matters, or public safety emergencies. Use the Escalate button inside the ticket.',
+      },
+      {
+        q: 'What is the SLA deadline and how do I check it?',
+        a: 'Each ticket has an SLA deadline based on its priority: Urgent = 4 hours, Normal = 48 hours, Low = 5 days. The deadline is shown on the ticket card. Tickets approaching or past their deadline are highlighted in red.',
+      },
+      {
+        q: 'Can I leave internal notes on a ticket?',
+        a: 'Yes. When replying in the ticket chat, check "Internal note" to leave a message that is visible only to servants and the admin — the citizen will not see it.',
+      },
+    ],
+  },
+  {
+    title: 'Communicating with Citizens',
+    icon: MessageSquare,
+    color: 'text-purple-600 bg-purple-50',
+    items: [
+      {
+        q: 'How do I send a message to a citizen?',
+        a: 'Open the ticket and use the chat panel at the bottom. Type your message and optionally attach up to 5 files. The citizen will receive a real-time notification.',
+      },
+      {
+        q: 'Can I send files to citizens?',
+        a: 'Yes. You can attach images, PDFs, documents, and videos (up to 5 files per message, 10 MB each) in the ticket chat.',
+      },
+      {
+        q: 'Will I be notified when a citizen replies?',
+        a: 'Yes. You receive a real-time notification in the portal when a citizen sends a message on any of your assigned tickets. Notifications are socket-based and appear immediately.',
+      },
+    ],
+  },
+  {
+    title: 'SLA & Priorities',
+    icon: Clock,
+    color: 'text-amber-600 bg-amber-50',
+    items: [
+      {
+        q: 'What do the priority levels mean?',
+        a: 'Urgent — emergencies or public safety threats (4-hour SLA). Normal — standard concerns (48-hour SLA). Low — minor requests or inquiries (5-day SLA). Urgent tickets appear highlighted in your dashboard.',
+      },
+      {
+        q: 'What happens when an SLA deadline passes?',
+        a: 'The ticket is flagged as an SLA breach and appears on the admin\'s SLA Breaches tab. The admin may re-assign or escalate it. Aim to resolve tickets before their deadline.',
+      },
+      {
+        q: 'How is my performance tracked?',
+        a: 'The admin can view your resolution rate, average response time, and citizen star ratings from the Reports page. Keeping your workload manageable and resolving tickets on time improves your metrics.',
+      },
+    ],
+  },
+  {
+    title: 'Profile & Presence',
+    icon: UserCog,
+    color: 'text-red-600 bg-red-50',
+    items: [
+      {
+        q: 'How does my presence status work?',
+        a: 'Your dashboard sends a heartbeat to the server every 2 minutes while you are logged in. The admin can see if you are online, recently active, or offline based on this heartbeat.',
+      },
+      {
+        q: 'Will I be marked offline if I close the browser?',
+        a: 'Yes. When you navigate away from the servant dashboard or close the tab, your status is automatically set to Offline.',
+      },
+      {
+        q: 'Can I upload a profile photo?',
+        a: 'Yes. Click "Edit Profile" in the sidebar to upload or change your avatar photo. The photo appears on your servant card in the admin panel.',
+      },
+    ],
+  },
+];
+
+// ── Admin FAQ ─────────────────────────────────────────────────────────────────
+const ADMIN_FAQ = [
+  {
+    title: 'Dashboard Overview',
+    icon: ShieldCheck,
+    color: 'text-blue-600 bg-blue-50',
+    items: [
+      {
+        q: 'What does the Overview tab show?',
+        a: 'The Overview shows system-wide KPIs: total tickets, resolved, pending, escalated, SLA breach count, average rating, and a 7-day trend chart. It also shows status and priority breakdowns and recent ticket activity.',
+      },
+      {
+        q: 'How do I navigate the admin panel?',
+        a: 'Use the sidebar: Admin Panel (overview/tickets/SLA tabs), Servants, Citizens, Departments, Announcements, Directory, and Reports are all separate sidebar links.',
+      },
+      {
+        q: 'How often does the data refresh?',
+        a: 'The overview and tickets load on tab switch. The Servants list auto-refreshes every 2 minutes while you are on that page. Use the Refresh button to manually reload data at any time.',
+      },
+    ],
+  },
+  {
+    title: 'Managing Tickets',
+    icon: ClipboardList,
+    color: 'text-green-600 bg-green-50',
+    items: [
+      {
+        q: 'How do I archive a ticket?',
+        a: 'In the Tickets tab, click the Archive icon on any ticket. The ticket moves to Closed status and appears in the Archived sub-tab. Archived tickets can be reactivated.',
+      },
+      {
+        q: 'How do I reactivate an archived ticket?',
+        a: 'Go to Tickets → Archived sub-tab. Click "Reactivate" on the ticket. You will be asked to enter your admin password to confirm. The ticket returns to Pending status.',
+      },
+      {
+        q: 'How do I permanently delete a ticket?',
+        a: 'Click the trash icon on any ticket (active or archived). This permanently deletes the ticket and all related messages, attachments, notifications, and feedback. This action cannot be undone.',
+      },
+      {
+        q: 'What is the SLA Breaches tab?',
+        a: 'It shows all open tickets that have passed their SLA deadline without being resolved, ordered by oldest first. Use this to prioritise follow-up with servants or re-assign to available staff.',
+      },
+    ],
+  },
+  {
+    title: 'Managing Servants',
+    icon: Users,
+    color: 'text-purple-600 bg-purple-50',
+    items: [
+      {
+        q: 'How do I add a new servant account?',
+        a: 'Go to Servants in the sidebar, click "Add Servant". Fill in their name, email, position, and department. An optional profile photo can be uploaded. The default password is set by the system.',
+      },
+      {
+        q: 'How do I remove a servant?',
+        a: 'Click the delete icon on their servant card. If they have open tickets, those tickets are automatically re-queued (servantId cleared, status set back to Pending) so they are not lost.',
+      },
+      {
+        q: 'How can I tell if a servant is online?',
+        a: 'The Servants page shows presence derived from each servant\'s last heartbeat: Online now (< 2 min), Active X min ago (< 10 min), Last seen X ago, or Never logged in.',
+      },
+      {
+        q: 'What does the workload bar mean?',
+        a: 'The workload bar shows the servant\'s current active ticket count as a percentage of a notional maximum of 10. Green < 50%, yellow 50–79%, red ≥ 80%.',
+      },
+    ],
+  },
+  {
+    title: 'Managing Citizens',
+    icon: UserCog,
+    color: 'text-amber-600 bg-amber-50',
+    items: [
+      {
+        q: 'How do I approve a citizen\'s ID?',
+        a: 'Go to Citizens in the sidebar. Citizens with a pending ID show an amber "Pending Review" badge. Click the eye icon to open the full-screen ID review modal, then click Approve or Reject.',
+      },
+      {
+        q: 'What happens when I reject a citizen\'s ID?',
+        a: 'Their status is set to REJECTED. They will see a rejection message on the login screen and can reupload a new ID photo. Once they reupload and it passes OCR, their status may become Verified automatically.',
+      },
+      {
+        q: 'How do I archive a citizen account?',
+        a: 'Click the archive toggle on the citizen row. Archived citizens cannot log in but their data and tickets are preserved. You can reactivate them at any time.',
+      },
+      {
+        q: 'Can I delete a citizen account?',
+        a: 'Yes, but only if they have no open tickets. If they have active tickets, the delete button is blocked. Archive the account instead to preserve the ticket history.',
+      },
+    ],
+  },
+  {
+    title: 'Departments & Announcements',
+    icon: Building2,
+    color: 'text-teal-600 bg-teal-50',
+    items: [
+      {
+        q: 'How do I create a new department?',
+        a: 'Go to Departments in the sidebar and click "Add Department". Fill in the name, code, description, head name, color, and optionally an icon. The department becomes immediately available for ticket routing.',
+      },
+      {
+        q: 'How do I publish an announcement?',
+        a: 'Go to Announcements in the sidebar, click "New Announcement". Fill in the title, content, and category (Info / Alert / Event). Toggle "Published" to make it live — this instantly broadcasts a popup notification to all connected citizens.',
+      },
+      {
+        q: 'Can I save an announcement as a draft?',
+        a: 'Yes. Leave the Published toggle off when creating or editing an announcement. It will be saved as a draft and will not be visible to citizens or broadcast via socket until published.',
+      },
+    ],
+  },
+  {
+    title: 'Reports & Analytics',
+    icon: BarChart2,
+    color: 'text-red-600 bg-red-50',
+    items: [
+      {
+        q: 'How do I access the reports page?',
+        a: 'Click "Reports" in the admin sidebar. It opens the full analytics page with period selector, KPI cards, charts, and servant performance table.',
+      },
+      {
+        q: 'What periods can I analyse?',
+        a: '1 Day, 7 Days, 15 Days, 30 Days, 90 Days, Annual (365 days), or All Time. Select from the period buttons at the top of the page.',
+      },
+      {
+        q: 'How do I export data?',
+        a: 'Use the Export CSV button to download all report data as a CSV file. Use Export PDF for a formatted multi-page A4 report with all charts and tables included.',
+      },
+    ],
+  },
+];
+
+// ── Shared department contact cards ──────────────────────────────────────────
 const SELF_HELP = [
-  {
-    title: "Mayor's Office",
-    desc: 'General inquiries, clearances, certificates, and documents',
-    icon: '🏛️',
-    contacts: ['(032) 473-XXXX', 'mayors@aloguinsan.gov.ph'],
-  },
-  {
-    title: 'Municipal Engineering',
-    desc: 'Road repairs, flood management, infrastructure concerns',
-    icon: '🔧',
-    contacts: ['(032) 473-XXXX'],
-  },
-  {
-    title: 'MSWDO (Social Welfare)',
-    desc: 'Social assistance, PWD/Senior ID, 4Ps, and welfare programs',
-    icon: '🤝',
-    contacts: ['(032) 473-XXXX'],
-  },
-  {
-    title: 'Rural Health Unit',
-    desc: 'Health services, medical assistance, immunization schedules',
-    icon: '🏥',
-    contacts: ['(032) 473-XXXX'],
-  },
-  {
-    title: 'PNP Station',
-    desc: 'Peace & order, incident reports, police assistance',
-    icon: '👮',
-    contacts: ['Emergency: 911', '(032) 473-XXXX'],
-  },
-  {
-    title: 'MENRO (Environment)',
-    desc: 'Environmental concerns, waste management, illegal logging',
-    icon: '🌿',
-    contacts: ['(032) 473-XXXX'],
-  },
+  { title: "Mayor's Office", desc: 'General inquiries, clearances, certificates, documents', icon: '🏛️', contacts: ['(032) 473-XXXX', 'mayors@aloguinsan.gov.ph'] },
+  { title: 'Municipal Engineering', desc: 'Road repairs, flood management, infrastructure concerns', icon: '🔧', contacts: ['(032) 473-XXXX'] },
+  { title: 'MSWDO (Social Welfare)', desc: 'Social assistance, PWD/Senior ID, 4Ps, and welfare programs', icon: '🤝', contacts: ['(032) 473-XXXX'] },
+  { title: 'Rural Health Unit', desc: 'Health services, medical assistance, immunization schedules', icon: '🏥', contacts: ['(032) 473-XXXX'] },
+  { title: 'PNP Station', desc: 'Peace & order, incident reports, police assistance', icon: '👮', contacts: ['Emergency: 911', '(032) 473-XXXX'] },
+  { title: 'MENRO (Environment)', desc: 'Environmental concerns, waste management, illegal logging', icon: '🌿', contacts: ['(032) 473-XXXX'] },
 ];
 
 function AccordionItem({ q, a }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="border border-gray-100 rounded-xl overflow-hidden">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between gap-3 px-4 py-4 text-left hover:bg-gray-50 transition-colors active:bg-gray-100">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-4 text-left hover:bg-gray-50 transition-colors active:bg-gray-100"
+      >
         <span className="text-sm font-medium text-gray-900 leading-snug">{q}</span>
         <ChevronDown className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -167,31 +383,52 @@ function AccordionItem({ q, a }) {
 }
 
 export default function FaqPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isAdmin, isServant } = useAuth();
   const [activeSection, setActiveSection] = useState(0);
+
+  // Pick FAQ content and page metadata by role
+  const sections = isAdmin ? ADMIN_FAQ : isServant ? SERVANT_FAQ : CITIZEN_FAQ;
+
+  const roleLabel = isAdmin
+    ? 'Admin Help Center'
+    : isServant
+    ? 'Servant Help Center'
+    : 'FAQs & Self-Help';
+
+  const roleSubtitle = isAdmin
+    ? 'Reference guide for managing the e-government portal.'
+    : isServant
+    ? 'Reference guide for handling citizen concerns and using your dashboard.'
+    : 'Find answers to common questions and contact information for government services.';
 
   const content = (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <HelpCircle className="w-7 h-7 text-primary-600" />
-          FAQs & Self-Help
+          {roleLabel}
         </h1>
-        <p className="text-gray-500 text-sm mt-1">Find answers to common questions and contact information for government services.</p>
+        <p className="text-gray-500 text-sm mt-1">{roleSubtitle}</p>
       </div>
 
       {/* FAQ Sections */}
       <div className="space-y-6 mb-12">
-        {/* Section navigation — horizontal scroll on mobile, vertical sidebar on desktop */}
+        {/* Mobile: horizontal scroll tab bar */}
         <div className="lg:hidden overflow-x-auto -mx-4 px-4 pb-1">
           <div className="flex gap-2 min-w-max">
-            {FAQ_SECTIONS.map((sec, i) => {
+            {sections.map((sec, i) => {
               const Icon = sec.icon;
               return (
-                <button key={i} onClick={() => setActiveSection(i)}
+                <button
+                  key={i}
+                  onClick={() => setActiveSection(i)}
                   className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap min-h-[44px] ${
-                    activeSection === i ? 'bg-primary-50 text-primary-700 shadow-sm' : 'bg-white text-gray-600 border border-gray-200'
-                  }`}>
+                    activeSection === i
+                      ? 'bg-primary-50 text-primary-700 shadow-sm'
+                      : 'bg-white text-gray-600 border border-gray-200'
+                  }`}
+                >
                   <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${sec.color}`}>
                     <Icon className="w-3.5 h-3.5" />
                   </div>
@@ -203,16 +440,21 @@ export default function FaqPage() {
         </div>
 
         <div className="grid lg:grid-cols-4 gap-6">
-          {/* Desktop sidebar navigation */}
+          {/* Desktop: sticky sidebar navigation */}
           <div className="hidden lg:block lg:col-span-1">
             <div className="card p-2 space-y-1 sticky top-20">
-              {FAQ_SECTIONS.map((sec, i) => {
+              {sections.map((sec, i) => {
                 const Icon = sec.icon;
                 return (
-                  <button key={i} onClick={() => setActiveSection(i)}
+                  <button
+                    key={i}
+                    onClick={() => setActiveSection(i)}
                     className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${
-                      activeSection === i ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-50'
-                    }`}>
+                      activeSection === i
+                        ? 'bg-primary-50 text-primary-700'
+                        : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${sec.color}`}>
                       <Icon className="w-4 h-4" />
                     </div>
@@ -223,63 +465,85 @@ export default function FaqPage() {
             </div>
           </div>
 
-        {/* FAQ content */}
-        <div className="lg:col-span-3">
-          <div className="card">
-            <div className="flex items-center gap-3 mb-5">
-              {(() => { const Icon = FAQ_SECTIONS[activeSection].icon; return (
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${FAQ_SECTIONS[activeSection].color}`}>
-                  <Icon className="w-5 h-5" />
-                </div>
-              ); })()}
-              <h2 className="text-lg font-bold text-gray-900">{FAQ_SECTIONS[activeSection].title}</h2>
-            </div>
-            <div className="space-y-2">
-              {FAQ_SECTIONS[activeSection].items.map((item, i) => (
-                <AccordionItem key={i} q={item.q} a={item.a} />
-              ))}
+          {/* FAQ content panel */}
+          <div className="lg:col-span-3">
+            <div className="card">
+              <div className="flex items-center gap-3 mb-5">
+                {(() => {
+                  const Icon = sections[activeSection].icon;
+                  return (
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${sections[activeSection].color}`}>
+                      <Icon className="w-5 h-5" />
+                    </div>
+                  );
+                })()}
+                <h2 className="text-lg font-bold text-gray-900">{sections[activeSection].title}</h2>
+              </div>
+              <div className="space-y-2">
+                {sections[activeSection].items.map((item, i) => (
+                  <AccordionItem key={i} q={item.q} a={item.a} />
+                ))}
+              </div>
             </div>
           </div>
         </div>
       </div>
-      </div>
 
-      {/* Self-Help: Department Contacts */}
-      <div className="mb-8">
-        <h2 className="text-xl font-bold text-gray-900 mb-1">Self-Help: Department Directory</h2>
-        <p className="text-sm text-gray-500 mb-5">Contact government departments directly for urgent or specific needs.</p>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {SELF_HELP.map((dept, i) => (
-            <div key={i} className="card hover:shadow-md transition-shadow">
-              <div className="flex items-start gap-3 mb-3">
-                <span className="text-2xl">{dept.icon}</span>
-                <div>
-                  <h3 className="font-semibold text-gray-900 text-sm">{dept.title}</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">{dept.desc}</p>
+      {/* Department contacts — shown for citizens and public only */}
+      {!isAdmin && !isServant && (
+        <div className="mb-8">
+          <h2 className="text-xl font-bold text-gray-900 mb-1">Self-Help: Department Directory</h2>
+          <p className="text-sm text-gray-500 mb-5">Contact government departments directly for urgent or specific needs.</p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {SELF_HELP.map((dept, i) => (
+              <div key={i} className="card hover:shadow-md transition-shadow">
+                <div className="flex items-start gap-3 mb-3">
+                  <span className="text-2xl">{dept.icon}</span>
+                  <div>
+                    <h3 className="font-semibold text-gray-900 text-sm">{dept.title}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">{dept.desc}</p>
+                  </div>
+                </div>
+                <div className="space-y-1.5 pl-9">
+                  {dept.contacts.map((c, j) => (
+                    <div key={j} className="flex items-center gap-2 text-xs text-gray-600">
+                      <Phone className="w-3 h-3 text-gray-400" />
+                      <span>{c}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="space-y-1.5 pl-9">
-                {dept.contacts.map((c, j) => (
-                  <div key={j} className="flex items-center gap-2 text-xs text-gray-600">
-                    <Phone className="w-3 h-3 text-gray-400" />
-                    <span>{c}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Still need help? */}
+      {/* Still need help? — CTA differs per role */}
       <div className="card bg-primary-50 border-primary-100">
         <div className="text-center py-4">
-          <h3 className="font-bold text-primary-900 mb-1">Still need help?</h3>
-          <p className="text-sm text-primary-700 mb-4">Submit a concern through the portal and our team will assist you.</p>
-          <a href="/submit" className="inline-flex items-center gap-2 px-6 py-2.5 bg-primary-600 text-white rounded-xl font-semibold text-sm hover:bg-primary-700 transition-colors shadow-lg shadow-primary-600/25">
-            <FileText className="w-4 h-4" />
-            Submit a Concern
-          </a>
+          {isAdmin ? (
+            <>
+              <h3 className="font-bold text-primary-900 mb-1">Need more information?</h3>
+              <p className="text-sm text-primary-700">Check the Reports page for system analytics, or review the SLA Breaches tab for overdue tickets.</p>
+            </>
+          ) : isServant ? (
+            <>
+              <h3 className="font-bold text-primary-900 mb-1">Something not covered here?</h3>
+              <p className="text-sm text-primary-700">Contact your administrator for account issues, or use the internal note feature on a ticket for case-specific questions.</p>
+            </>
+          ) : (
+            <>
+              <h3 className="font-bold text-primary-900 mb-1">Still need help?</h3>
+              <p className="text-sm text-primary-700 mb-4">Submit a concern through the portal and our team will assist you.</p>
+              <a
+                href="/submit"
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-primary-600 text-white rounded-xl font-semibold text-sm hover:bg-primary-700 transition-colors shadow-lg shadow-primary-600/25"
+              >
+                <FileText className="w-4 h-4" />
+                Submit a Concern
+              </a>
+            </>
+          )}
         </div>
       </div>
     </div>
