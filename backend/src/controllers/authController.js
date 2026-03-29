@@ -24,7 +24,7 @@ import path from 'path';
 import dns from 'dns';
 import { promisify } from 'util';
 import { sendWelcomeEmail, sendResetCodeEmail, sendOtpEmail } from '../services/notification.js';
-import { getFirebaseAuth } from '../lib/firebase.js';
+import { verifyFirebaseToken } from '../lib/firebase.js';
 
 const resolveMx = promisify(dns.resolveMx);
 
@@ -946,13 +946,8 @@ export const verifyFirebasePhone = async (req, res, next) => {
     const { idToken } = req.body;
     if (!idToken) return res.status(400).json({ error: 'Firebase ID token is required' });
 
-    const firebaseAuth = getFirebaseAuth();
-    if (!firebaseAuth) {
-      return res.status(503).json({ error: 'Firebase is not configured on this server' });
-    }
-
-    // Verify the Firebase ID token
-    const decoded = await firebaseAuth.verifyIdToken(idToken);
+    // Verify token via REST — no firebase-admin background processes
+    const decoded = await verifyFirebaseToken(idToken);
     const phone = decoded.phone_number;
 
     if (!phone) {
@@ -997,8 +992,8 @@ export const verifyFirebasePhone = async (req, res, next) => {
       },
     });
   } catch (err) {
-    if (err.code === 'auth/id-token-expired' || err.code === 'auth/argument-error') {
-      return res.status(401).json({ error: 'Invalid or expired Firebase token' });
+    if (err.isExpired || err.isInvalid || err.isUnconfigured) {
+      return res.status(err.isUnconfigured ? 503 : 401).json({ error: err.isUnconfigured ? 'Firebase is not configured on this server' : 'Invalid or expired Firebase token' });
     }
     next(err);
   }
@@ -1029,13 +1024,8 @@ export const verifyPhoneOtp = async (req, res, next) => {
       return res.status(400).json({ error: 'No pending verification found. Please log in again.' });
     }
 
-    // Verify Firebase token
-    const firebaseAuth = getFirebaseAuth();
-    if (!firebaseAuth) {
-      return res.status(503).json({ error: 'Firebase is not configured on this server' });
-    }
-
-    const decoded = await firebaseAuth.verifyIdToken(idToken);
+    // Verify token via REST — no firebase-admin background processes
+    const decoded = await verifyFirebaseToken(idToken);
     const firebasePhone = decoded.phone_number;
     if (!firebasePhone) {
       return res.status(400).json({ error: 'No phone number in Firebase token' });
@@ -1102,8 +1092,8 @@ export const verifyPhoneOtp = async (req, res, next) => {
       },
     });
   } catch (err) {
-    if (err.code === 'auth/id-token-expired' || err.code === 'auth/argument-error') {
-      return res.status(401).json({ error: 'Invalid or expired Firebase token' });
+    if (err.isExpired || err.isInvalid || err.isUnconfigured) {
+      return res.status(err.isUnconfigured ? 503 : 401).json({ error: err.isUnconfigured ? 'Firebase is not configured on this server' : 'Invalid or expired Firebase token' });
     }
     next(err);
   }

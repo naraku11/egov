@@ -1,40 +1,65 @@
 /**
  * @file firebase.js
- * @description Firebase Admin SDK initialization for server-side token verification.
+ * @description Lightweight Firebase Phone Auth token verifier.
  *
- * Uses a service account JSON file downloaded from:
- * Firebase Console → Project Settings → Service accounts → Generate new private key
+ * Replaces the firebase-admin SDK with a single REST call to the
+ * Firebase Identity Toolkit API. This eliminates:
+ *  - firebase-admin's persistent gRPC/HTTP2 connections to Google APIs
+ *  - Internal worker threads for JWT crypto operations
+ *  - 200+ transitive npm dependencies
  *
- * Set the FIREBASE_SERVICE_ACCOUNT_PATH env var to the path of the JSON file,
- * or place it at backend/firebase-service-account.json (gitignored).
+ * All of the above were holding entry-process slots on Hostinger shared
+ * hosting, pushing the server above the 20-process limit.
+ *
+ * How it works:
+ *   POST https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={WEB_API_KEY}
+ *   Body: { idToken: "..." }
+ *   → Returns the user record including phoneNumber if the token is valid.
+ *
+ * The Web API Key is the same key already in the frontend .env as
+ * VITE_FIREBASE_API_KEY. Add it to the backend .env as FIREBASE_WEB_API_KEY.
+ *
+ * @param {string} idToken - Firebase Phone Auth ID token from the client.
+ * @returns {{ phone_number: string|null, uid: string }} Decoded token claims.
+ * @throws {Error} with .isExpired or .isInvalid flags for auth error handling.
  */
-
-import admin from 'firebase-admin';
-import fs from 'fs';
-import path from 'path';
-
-let firebaseApp = null;
-
-/**
- * Lazily initializes the Firebase Admin app.
- * Returns the admin.auth() instance for token verification.
- */
-export const getFirebaseAuth = () => {
-  if (!firebaseApp) {
-    const saPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
-      || path.join(process.cwd(), 'firebase-service-account.json');
-
-    if (!fs.existsSync(saPath)) {
-      console.warn('⚠️  Firebase service account not found at:', saPath);
-      console.warn('   Phone OTP via Firebase will not work until configured.');
-      return null;
-    }
-
-    const serviceAccount = JSON.parse(fs.readFileSync(saPath, 'utf8'));
-    firebaseApp = admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
+export const verifyFirebaseToken = async (idToken) => {
+  const apiKey = process.env.FIREBASE_WEB_API_KEY;
+  if (!apiKey) {
+    const err = new Error('FIREBASE_WEB_API_KEY is not set — phone auth is unavailable');
+    err.isUnconfigured = true;
+    throw err;
   }
 
-  return admin.auth();
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken }),
+    }
+  );
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const message = body?.error?.message || 'Firebase token verification failed';
+    const err = new Error(message);
+    // Map Firebase REST error messages to the same flags the old Admin SDK used
+    if (message === 'TOKEN_EXPIRED')  err.isExpired = true;
+    else err.isInvalid = true;
+    throw err;
+  }
+
+  const data = await res.json();
+  const firebaseUser = data?.users?.[0];
+  if (!firebaseUser) {
+    const err = new Error('No user found in Firebase response');
+    err.isInvalid = true;
+    throw err;
+  }
+
+  return {
+    phone_number: firebaseUser.phoneNumber || null,
+    uid: firebaseUser.localId,
+  };
 };

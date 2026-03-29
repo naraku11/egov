@@ -19,7 +19,7 @@ AI-powered citizen concern management system that matches residents with the app
 | Auth | JWT · bcryptjs · OTP (email + Firebase Phone Auth) · strong password policy |
 | Real-time | Socket.IO 4.8 (server + client) |
 | Email | Nodemailer 6.10 (Hostinger SMTP) |
-| Phone OTP | Firebase Admin SDK 13.7 (server) · Firebase 12.11 (client) |
+| Phone OTP | Firebase Identity Toolkit REST API (server) · Firebase 12.11 (client) |
 | PDF Export | jsPDF 4.2 + html2canvas 1.4 (client-side) |
 | Icons | Lucide React 0.577 |
 | HTTP Client | Axios 1.13 (JWT interceptor) |
@@ -83,6 +83,11 @@ CLIENT_URL=https://aloguinsan-egov.online
 UPLOAD_DIR=./uploads
 MAX_FILE_SIZE_MB=10
 
+# Firebase Phone Auth (REST — no firebase-admin SDK)
+# Same value as VITE_FIREBASE_API_KEY in the frontend .env.
+# Leave blank to disable phone OTP (email OTP fallback still works).
+FIREBASE_WEB_API_KEY=your_firebase_web_api_key
+
 # SMTP (Hostinger Email — used for OTP, password reset, notifications)
 SMTP_HOST=smtp.hostinger.com
 SMTP_PORT=465
@@ -91,8 +96,6 @@ SMTP_USER=info@aloguinsan-egov.online
 SMTP_PASS=your_email_password
 EMAIL_FROM=info@aloguinsan-egov.online
 ```
-
-> **Note:** Place your `firebase-service-account.json` in the backend root for Firebase Phone Auth.
 
 **Frontend** (`frontend/.env`):
 ```env
@@ -474,17 +477,16 @@ egov/
 │   │   └── lib/
 │   │       ├── prisma.js              # Singleton Prisma Client (pool: 3 connections)
 │   │       ├── socket.js              # Socket.IO init + event handlers
-│   │       └── firebase.js            # Firebase Admin SDK for phone auth
+│   │       └── firebase.js            # Firebase token verifier via REST (no firebase-admin)
 │   │
 │   ├── uploads/
 │   │   ├── avatars/                   # User & servant profile photos
 │   │   ├── ids/                       # Citizen ID verification photos
 │   │   └── attachments/               # Ticket/message file attachments
 │   │
-│   ├── firebase-service-account.json  # Firebase credentials (not in git)
 │   ├── .env.example                   # Environment template
 │   ├── .env                           # Actual credentials (not in git)
-│   └── package.json                   # 15 deps + 1 devDep (nodemon)
+│   └── package.json                   # 14 deps + 1 devDep (nodemon)
 │
 ├── frontend/
 │   ├── public/
@@ -578,6 +580,7 @@ Tuned for Hostinger Business shared hosting (40 entry process limit):
 
 | Optimization | Value | Effect |
 |---|---|---|
+| No `firebase-admin` SDK | REST API instead | Eliminates gRPC background connections + worker threads |
 | HTTP `keepAliveTimeout` | 20 s | Idle connections released in 20 s (vs Node default ~5 min) |
 | HTTP `requestTimeout` | 25 s | Hanging requests terminated, freeing process slots |
 | Socket.IO `upgradeTimeout` | 5 s | Polling connections upgrade to WebSocket within 5 s |
