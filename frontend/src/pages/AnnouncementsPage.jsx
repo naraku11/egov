@@ -182,7 +182,7 @@ function AnnouncementModal({ entry, onClose, onSaved }) {
  * @returns {JSX.Element} The full-page announcements listing.
  */
 export default function AnnouncementsPage() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, loading: authLoading } = useAuth();
 
   // Full list of announcements fetched from the API
   const [announcements, setAnnouncements] = useState([]);
@@ -221,8 +221,8 @@ export default function AnnouncementsPage() {
       .finally(() => setLoading(false));
   };
 
-  // Load announcements on mount and whenever the admin state changes
-  useEffect(() => { load(); }, [isAdmin]);
+  // Load announcements once auth resolves and whenever the admin state changes
+  useEffect(() => { if (!authLoading) load(); }, [isAdmin, authLoading]);
 
   /**
    * Deletes the announcement currently held in the `deleting` state.

@@ -174,16 +174,33 @@ router.get('/', authenticate, requireAdmin, async (req, res, next) => {
   try {
     const servants = await prisma.servant.findMany({
       include: {
-        // Attach department details for display in the admin panel
         department: { select: { name: true, code: true, color: true } },
-        // Include total ticket count without loading all ticket records
         _count: { select: { tickets: true } },
       },
-      orderBy: { name: 'asc' }, // alphabetical list
+      orderBy: { name: 'asc' },
     });
 
-    // Remove the hashed password from each servant object before sending
-    const result = servants.map(({ password: _, ...s }) => s);
+    // Fetch all feedback for these servants' tickets in one query
+    const servantIds = servants.map(s => s.id);
+    const feedbackRows = await prisma.feedback.findMany({
+      where:  { ticket: { servantId: { in: servantIds } } },
+      select: { rating: true, ticket: { select: { servantId: true } } },
+    });
+
+    // Aggregate ratings per servant in JS (avoids N+1 queries)
+    const ratingMap = {};
+    for (const f of feedbackRows) {
+      const sid = f.ticket.servantId;
+      if (!ratingMap[sid]) ratingMap[sid] = { sum: 0, count: 0 };
+      ratingMap[sid].sum   += f.rating;
+      ratingMap[sid].count += 1;
+    }
+
+    const result = servants.map(({ password: _, ...s }) => ({
+      ...s,
+      avgRating:    ratingMap[s.id] ? +(ratingMap[s.id].sum / ratingMap[s.id].count).toFixed(1) : null,
+      totalRatings: ratingMap[s.id]?.count || 0,
+    }));
     res.json(result);
   } catch (err) {
     next(err);

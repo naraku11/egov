@@ -39,8 +39,9 @@ import {
   assignTicket,
   escalateTicket,
   classifyAndRoute,
+  changeTicketDepartment,
 } from '../controllers/ticketController.js';
-import { authenticate, requireClient, requireServant } from '../middleware/auth.js';
+import { authenticate, requireClient, requireServant, requireAdmin } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 
 /** Dedicated Express router instance for all /tickets endpoints. */
@@ -141,14 +142,26 @@ router.post('/:id/message', authenticate, upload.array('attachments', 5), addMes
 
 /**
  * PATCH /:id/assign
- * Assign (or re-assign) a ticket to a specific servant.
+ * Assign (or re-assign) a ticket to a servant.
+ * Servant self-assigns; admin supplies servantId in the request body.
  *
  * @name AssignTicket
  * @param {string} id – CUID of the ticket to assign
  * @middleware authenticate
- * @middleware requireServant
  */
-router.patch('/:id/assign', authenticate, requireServant, assignTicket);
+router.patch('/:id/assign', authenticate, assignTicket);
+
+/**
+ * PATCH /:id/department
+ * Admin-only: change the department a ticket is routed to.
+ * Resets servantId and status to PENDING.
+ *
+ * @name ChangeTicketDepartment
+ * @param {string} id – CUID of the ticket to update
+ * @middleware authenticate
+ * @middleware requireAdmin
+ */
+router.patch('/:id/department', authenticate, requireAdmin, changeTicketDepartment);
 
 /**
  * PATCH /:id/escalate

@@ -548,30 +548,94 @@ export const submitFeedback = async (req, res, next) => {
 };
 
 /**
- * POST /tickets/:id/assign
- * Allows a servant to self-assign a ticket (e.g. from the unassigned queue).
+ * PATCH /tickets/:id/assign
+ * Assigns a ticket to a servant.
+ *  - Servant: self-assigns (servantId taken from req.servant).
+ *  - Admin:   assigns to any servant by supplying servantId in the body.
  *
- * Increments the servant's workload counter and sets the ticket status to
- * ASSIGNED.
+ * Increments the servant's workload counter, sets ticket status to ASSIGNED,
+ * and notifies the servant via Socket.IO + email.
  *
- * @param {import('express').Request}  req  - Params: { id }
+ * @param {import('express').Request}  req  - Params: { id }; Body (admin only): { servantId }
  * @param {import('express').Response} res  - 200 with the updated ticket.
  * @param {import('express').NextFunction} next
  */
 export const assignTicket = async (req, res, next) => {
   try {
     const { id } = req.params;
+    // Servant self-assigns; admin must supply servantId in body
+    const servantId = req.userType === 'servant'
+      ? req.servant.id
+      : req.body.servantId;
+
+    if (!servantId) return res.status(400).json({ error: 'servantId is required' });
+
     const updated = await prisma.ticket.update({
       where: { id },
-      data: { servantId: req.servant.id, status: 'ASSIGNED' },
-      include: { user: true },
+      data: { servantId, status: 'ASSIGNED' },
+      include: { user: true, servant: true },
     });
 
     // Track the servant's workload so auto-assignment stays balanced
     await prisma.servant.update({
-      where: { id: req.servant.id },
+      where: { id: servantId },
       data: { workload: { increment: 1 } },
     });
+
+    // Notify assigned servant via Socket.IO + email
+    notifyServant(servantId, {
+      ticketId: id,
+      type: 'ASSIGNED',
+      title: 'Ticket Assigned to You',
+      message: `Ticket ${updated.ticketNumber} has been assigned to you.`,
+    });
+    if (updated.servant?.email) {
+      sendTicketAssignedEmail(updated.servant.email, updated.servant.name, updated);
+    }
+
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PATCH /tickets/:id/department
+ * Admin-only: reassign a ticket to a different department.
+ * Clears the servant assignment and resets status to PENDING so the ticket
+ * can be re-routed to a servant in the new department.
+ *
+ * @param {import('express').Request}  req  - Params: { id }; Body: { departmentId }
+ * @param {import('express').Response} res  - 200 with the updated ticket.
+ * @param {import('express').NextFunction} next
+ */
+export const changeTicketDepartment = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { departmentId } = req.body;
+    if (!departmentId) return res.status(400).json({ error: 'departmentId is required' });
+
+    const updated = await prisma.ticket.update({
+      where: { id },
+      data: { departmentId, servantId: null, status: 'PENDING' },
+      include: { department: true, user: true },
+    });
+
+    // Notify ticket owner of the reassignment
+    if (updated.userId) {
+      createNotification(
+        updated.userId,
+        id,
+        'STATUS_UPDATE',
+        'Ticket Reassigned',
+        `Your ticket ${updated.ticketNumber} has been reassigned to ${updated.department?.name}.`
+      );
+    }
+
+    try {
+      getIO().to(`ticket:${id}`).emit('ticket:updated', updated);
+      getIO().to('admin').emit('ticket:updated', updated);
+    } catch {}
 
     res.json(updated);
   } catch (err) {

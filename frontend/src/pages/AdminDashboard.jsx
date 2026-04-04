@@ -30,7 +30,7 @@ import {
   Users, FileText, CheckCircle, AlertTriangle, Star, TrendingUp,
   Building2, UserPlus, RefreshCw, X, Search, Filter, Clock,
   ShieldCheck, Activity, ChevronRight, Pencil, Trash2, Camera,
-  Archive, MapPin, Phone, Mail, UserX, Eye, ShieldOff, Shield,
+  Archive, MapPin, Phone, Mail, UserX, Eye, ShieldOff, Shield, UserCheck,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
@@ -679,6 +679,13 @@ export default function AdminDashboard() {
   /** Ticket staged for deletion, or null */
   const [deletingTicket, setDeletingTicket] = useState(null);
 
+  /** Ticket being assigned a servant — drives the assign-servant modal */
+  const [assigningTicket, setAssigningTicket] = useState(null);
+  /** Selected servantId in the assign modal */
+  const [assignServantId, setAssignServantId] = useState('');
+  /** Loading state for the assign API call */
+  const [assignLoading, setAssignLoading] = useState(false);
+
   /** Archived tickets list */
   const [archivedTickets, setArchivedTickets] = useState([]);
   /** Search query for archived tab */
@@ -691,6 +698,13 @@ export default function AdminDashboard() {
   const [reactivatePassword, setReactivatePassword] = useState('');
   /** Loading state for reactivation */
   const [reactivateLoading, setReactivateLoading] = useState(false);
+
+  /** Ticket whose department is being changed, or null */
+  const [changeDeptTicket, setChangeDeptTicket] = useState(null);
+  /** Selected departmentId in the change-department modal */
+  const [changeDeptId, setChangeDeptId] = useState('');
+  /** Loading state for change-department API call */
+  const [changeDeptLoading, setChangeDeptLoading] = useState(false);
 
   /** Department object to edit, 'add' for new, or null when closed */
   const [deptModal, setDeptModal] = useState(null);
@@ -872,6 +886,51 @@ export default function AdminDashboard() {
       fetchTabData('citizens');
     } catch (err) {
       toast.error(err.response?.data?.error || err.message);
+    }
+  };
+
+  const handleAssignServant = async () => {
+    if (!assigningTicket || !assignServantId) return;
+    setAssignLoading(true);
+    try {
+      await api.patch(`/tickets/${assigningTicket.id}/assign`, { servantId: assignServantId });
+      toast.success('Servant assigned');
+      setAssigningTicket(null);
+      setAssignServantId('');
+      fetchTabData('tickets');
+      if (tab === 'sla') fetchTabData('sla');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  // Ensure servants list is loaded before opening the assign modal
+  const openAssignModal = async (ticket) => {
+    if (servants.length === 0) {
+      try {
+        const { data } = await api.get('/servants');
+        setServants(data || []);
+      } catch {}
+    }
+    setAssigningTicket(ticket);
+    setAssignServantId('');
+  };
+
+  const handleChangeDept = async () => {
+    if (!changeDeptTicket || !changeDeptId) return;
+    setChangeDeptLoading(true);
+    try {
+      await api.patch(`/tickets/${changeDeptTicket.id}/department`, { departmentId: changeDeptId });
+      toast.success('Department updated');
+      setChangeDeptTicket(null);
+      setChangeDeptId('');
+      fetchTabData('tickets');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    } finally {
+      setChangeDeptLoading(false);
     }
   };
 
@@ -1237,12 +1296,32 @@ export default function AdminDashboard() {
                               {ticket.department?.name}
                             </span>
                           </td>
-                          <td className="py-3 px-3 text-gray-500 text-xs">{ticket.servant?.name || '—'}</td>
+                          <td className="py-3 px-3 text-gray-500 text-xs">
+                            {ticket.servant?.name ? (
+                              ticket.servant.name
+                            ) : (
+                              <button
+                                onClick={() => openAssignModal(ticket)}
+                                className="flex items-center gap-1 text-primary-600 hover:text-primary-700 text-xs font-medium"
+                                title="Assign servant"
+                              >
+                                <UserCheck className="w-3 h-3" />
+                                Assign
+                              </button>
+                            )}
+                          </td>
                           <td className="py-3 px-3"><StatusBadge status={ticket.status} /></td>
                           <td className="py-3 px-3"><PriorityBadge priority={ticket.priority} /></td>
                           <td className="py-3 px-3 text-gray-400 text-xs">{format(new Date(ticket.createdAt), 'MMM d, yyyy')}</td>
                           <td className="py-3 px-3">
                             <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => { setChangeDeptTicket(ticket); setChangeDeptId(ticket.departmentId || ''); }}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                title="Change department"
+                              >
+                                <Building2 className="w-3.5 h-3.5" />
+                              </button>
                               <button
                                 onClick={() => handleArchiveTicket(ticket)}
                                 className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
@@ -1475,7 +1554,22 @@ export default function AdminDashboard() {
                       </div>
                     </div>
 
-                    <p className="text-xs text-gray-400 truncate mb-3">{servant.email}</p>
+                    <p className="text-xs text-gray-400 truncate mb-2">{servant.email}</p>
+
+                    {/* Star rating */}
+                    <div className="flex items-center gap-1.5 mb-3">
+                      <div className="flex items-center gap-0.5">
+                        {[1,2,3,4,5].map(s => (
+                          <Star
+                            key={s}
+                            className={`w-3 h-3 ${servant.avgRating && s <= Math.round(servant.avgRating) ? 'fill-amber-400 text-amber-400' : 'text-gray-200'}`}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        {servant.avgRating ? `${servant.avgRating} (${servant.totalRatings})` : 'No ratings'}
+                      </span>
+                    </div>
 
                     {/* Edit and Remove action buttons */}
                     <div className="flex gap-2 pt-2 border-t border-gray-100">
@@ -1818,13 +1912,22 @@ export default function AdminDashboard() {
                         <span>👥 {ticket.user?.name}</span>
                       </div>
                     </div>
-                    {/* SLA deadline and relative time shown on the right */}
-                    <div className="text-right flex-shrink-0">
+                    {/* SLA deadline, relative time, and assign button */}
+                    <div className="text-right flex-shrink-0 space-y-1.5">
                       <p className="text-xs text-red-700 font-semibold">SLA Deadline</p>
                       <p className="text-xs text-red-600">{format(new Date(ticket.slaDeadline), 'MMM d, h:mm a')}</p>
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-xs text-gray-400">
                         {formatDistanceToNow(new Date(ticket.slaDeadline), { addSuffix: true })}
                       </p>
+                      {!ticket.servant && (
+                        <button
+                          onClick={() => openAssignModal(ticket)}
+                          className="flex items-center gap-1 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 px-2 py-1 rounded-lg transition-colors ml-auto"
+                        >
+                          <UserCheck className="w-3 h-3" />
+                          Assign
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1839,6 +1942,118 @@ export default function AdminDashboard() {
           Both modals are rendered at the root of the component tree so they
           overlay the full page via fixed positioning.
       ──────────────────────────────────────────────────────────────────────── */}
+
+      {/* Change department modal */}
+      {changeDeptTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm animate-fadeIn">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-indigo-600" /> Change Department
+              </h2>
+              <button onClick={() => setChangeDeptTicket(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-gray-500">
+                Ticket <span className="font-mono font-semibold">{changeDeptTicket.ticketNumber}</span> — {changeDeptTicket.title}
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Department</label>
+                <select
+                  className="input-field"
+                  value={changeDeptId}
+                  onChange={e => setChangeDeptId(e.target.value)}
+                >
+                  <option value="">Select department</option>
+                  {departments.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Changing the department will unassign the current servant and reset the ticket to Pending.
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setChangeDeptTicket(null)} className="btn-secondary flex-1">Cancel</button>
+                <button
+                  onClick={handleChangeDept}
+                  disabled={!changeDeptId || changeDeptLoading}
+                  className="btn-primary flex-1 disabled:opacity-50"
+                >
+                  {changeDeptLoading ? 'Updating...' : 'Update'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign servant modal */}
+      {assigningTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm animate-fadeIn">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-primary-600" /> Assign Servant
+              </h2>
+              <button onClick={() => setAssigningTicket(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-gray-500">
+                Ticket <span className="font-mono font-semibold">{assigningTicket.ticketNumber}</span> — {assigningTicket.title}
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Servant</label>
+                <div className="space-y-2 max-h-52 overflow-y-auto">
+                  {servants
+                    .filter(s => !assigningTicket.departmentId || s.departmentId === assigningTicket.departmentId || s.status === 'AVAILABLE')
+                    .map(s => (
+                      <button
+                        key={s.id}
+                        onClick={() => setAssignServantId(s.id)}
+                        className={`w-full text-left flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                          assignServantId === s.id
+                            ? 'border-primary-400 bg-primary-50'
+                            : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                          style={{ backgroundColor: s.department?.color || '#3B82F6' }}>
+                          {s.name.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{s.name}</p>
+                          <p className="text-xs text-gray-400 truncate">{s.department?.name} · {s.workload || 0} active tickets</p>
+                        </div>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${
+                          s.status === 'AVAILABLE' ? 'bg-green-100 text-green-700' :
+                          s.status === 'BUSY' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'
+                        }`}>{s.status.charAt(0) + s.status.slice(1).toLowerCase()}</span>
+                      </button>
+                    ))}
+                  {servants.length === 0 && (
+                    <p className="text-sm text-gray-400 text-center py-4">No servants available</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setAssigningTicket(null)} className="btn-secondary flex-1">Cancel</button>
+                <button
+                  onClick={handleAssignServant}
+                  disabled={!assignServantId || assignLoading}
+                  className="btn-primary flex-1 disabled:opacity-50"
+                >
+                  {assignLoading ? 'Assigning...' : 'Assign'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add / edit servant modal — shown when servantModal is not null */}
       {servantModal && (

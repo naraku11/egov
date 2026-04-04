@@ -61,7 +61,7 @@ const statusOrder = { PENDING: 0, ASSIGNED: 1, IN_PROGRESS: 2, RESOLVED: 3, CLOS
 export default function TrackTicket() {
   // Route param — may be pre-set when navigating directly to a ticket URL
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { t } = useLanguage();
   const socket = useSocket();
 
@@ -84,6 +84,11 @@ export default function TrackTicket() {
   // File attachments for messages
   const [msgFiles, setMsgFiles]             = useState([]);
   const fileInputRef                        = useRef(null);
+
+  // Admin: department change state
+  const [departments, setDepartments]       = useState([]);
+  const [changingDept, setChangingDept]     = useState(false);
+  const [deptLoading, setDeptLoading]       = useState(false);
 
   // Loading flags
   const [loading, setLoading]               = useState(true);
@@ -222,6 +227,36 @@ export default function TrackTicket() {
   };
 
   /**
+   * Admin: load departments list (lazy, only when admin opens the change picker).
+   */
+  const loadDepartments = async () => {
+    if (departments.length > 0) return;
+    try {
+      const { data } = await api.get('/departments');
+      setDepartments(data || []);
+    } catch {}
+  };
+
+  /**
+   * Admin: change the ticket's department.
+   */
+  const changeDepartment = async (departmentId) => {
+    if (!selectedTicket || !departmentId) return;
+    setDeptLoading(true);
+    try {
+      const { data } = await api.patch(`/tickets/${selectedTicket.id}/department`, { departmentId });
+      setSelectedTicket(prev => ({ ...prev, ...data }));
+      setTickets(prev => prev.map(t => t.id === data.id ? { ...t, ...data } : t));
+      setChangingDept(false);
+      toast.success('Department updated');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    } finally {
+      setDeptLoading(false);
+    }
+  };
+
+  /**
    * Client-side filter: keeps tickets whose title or ticketNumber contains
    * the current search query (case-insensitive).
    */
@@ -321,11 +356,40 @@ export default function TrackTicket() {
                       </div>
                       <h2 className="text-base font-bold text-gray-900 leading-tight">{selectedTicket.title}</h2>
                       <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-gray-500">
-                        {/* Department colour dot */}
-                        <span className="flex items-center gap-1">
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: selectedTicket.department?.color || '#3B82F6' }} />
-                          {selectedTicket.department?.name}
-                        </span>
+                        {/* Department — admin can change it */}
+                        {isAdmin ? (
+                          <span className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: selectedTicket.department?.color || '#3B82F6' }} />
+                            {changingDept ? (
+                              <select
+                                autoFocus
+                                className="text-xs border border-primary-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-400 bg-white"
+                                defaultValue={selectedTicket.departmentId || ''}
+                                onChange={e => { if (e.target.value) changeDepartment(e.target.value); }}
+                                onBlur={() => setChangingDept(false)}
+                                disabled={deptLoading}
+                              >
+                                <option value="">Select department</option>
+                                {departments.map(d => (
+                                  <option key={d.id} value={d.id}>{d.name}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <button
+                                onClick={() => { loadDepartments(); setChangingDept(true); }}
+                                className="hover:text-primary-600 hover:underline cursor-pointer"
+                                title="Change department"
+                              >
+                                {selectedTicket.department?.name || 'No department'}
+                              </button>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: selectedTicket.department?.color || '#3B82F6' }} />
+                            {selectedTicket.department?.name}
+                          </span>
+                        )}
                         {selectedTicket.servant && <span>👤 {selectedTicket.servant.name}</span>}
                         <span>📅 {format(new Date(selectedTicket.createdAt), 'MMM d, yyyy')}</span>
                       </div>
@@ -374,13 +438,18 @@ export default function TrackTicket() {
                     {/* Attachment links */}
                     {selectedTicket.attachments?.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-3">
-                        {selectedTicket.attachments.map(att => (
-                          <a key={att.id} href={att.filePath} target="_blank" rel="noreferrer"
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:border-primary-300 transition-colors">
-                            <Paperclip className="w-3 h-3" />
-                            {att.fileName}
-                          </a>
-                        ))}
+                        {selectedTicket.attachments.map(att => {
+                          const apiBase = api.defaults.baseURL?.replace('/api', '') || '';
+                          const fileUrl = att.filePath?.startsWith('http') ? att.filePath : `${apiBase}${att.filePath}`;
+                          return (
+                            <a key={att.id} href={fileUrl} target="_blank" rel="noreferrer"
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:border-primary-300 transition-colors">
+                              <Paperclip className="w-3 h-3" />
+                              {att.fileName}
+                              {att.location && <span className="text-gray-400 ml-1">({att.location})</span>}
+                            </a>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

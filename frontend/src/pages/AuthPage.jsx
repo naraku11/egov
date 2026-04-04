@@ -636,8 +636,10 @@ export default function AuthPage() {
       return toast.error('Passwords do not match');
     }
     if (!regData.barangay) return toast.error('Please select your barangay');
-    if (!idPhoto) return toast.error('Please upload a valid ID photo for verification');
-    if (!idVerification?.isValid) return toast.error('Please upload a clear, valid ID photo that passes validation');
+    const hasPhone = !!regData.phone?.trim();
+    // ID photo is required only when registering without a phone number
+    if (!hasPhone && !idPhoto) return toast.error('Please provide a phone number or upload a valid ID photo');
+    if (idPhoto && !idVerification?.isValid) return toast.error('Please upload a clear, valid ID photo that passes validation');
     if (!agreedToTerms) return toast.error('Please agree to the Terms and Conditions');
     setLoading(true);
     try {
@@ -649,8 +651,10 @@ export default function AuthPage() {
       formData.append('password', regData.password);
       formData.append('barangay', regData.barangay);
       if (regData.address) formData.append('address', regData.address);
-      formData.append('idPhoto', idPhoto);
-      formData.append('idNameMatch', idVerification?.nameMatch ? 'true' : 'false');
+      if (idPhoto) {
+        formData.append('idPhoto', idPhoto);
+        formData.append('idNameMatch', idVerification?.nameMatch ? 'true' : 'false');
+      }
 
       const { data } = await api.post('/auth/register', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -1740,7 +1744,14 @@ export default function AuthPage() {
 
                   {/* Valid ID Photo Upload + Camera Capture + Verification */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Valid ID Photo <span className="text-red-400">*</span></label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                      Valid ID Photo{' '}
+                      {regData.phone ? (
+                        <span className="text-xs font-normal text-gray-400">(optional — phone provided)</span>
+                      ) : (
+                        <span className="text-red-400">*</span>
+                      )}
+                    </label>
                     <p className="text-xs text-gray-500 mb-2">Upload or capture a clear photo of any valid government-issued ID. OCR will scan and verify your name automatically.</p>
 
                     {/* Camera view */}

@@ -28,6 +28,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initSocket, getIO } from './lib/socket.js';
 import prisma from './lib/prisma.js';
+import { notifyServant } from './services/notification.js';
 
 // ── Feature routers ───────────────────────────────────────────────────────────
 import authRoutes from './routes/auth.js';
@@ -293,6 +294,57 @@ httpServer.listen(PORT, () => {
   console.log(`\n🏛️  E-Gov Aloguinsan API running on port ${PORT}`);
   console.log(`📚 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 Health: http://localhost:${PORT}/health\n`);
+
+  // ── SLA breach notification scheduler ──────────────────────────────────────
+  // Runs every 10 minutes; finds newly breached (unresolved) tickets whose
+  // SLA deadline passed in the last polling window, then notifies the assigned
+  // servant via Socket.IO and broadcasts to the admin room.
+  // Uses an in-memory Set to avoid re-notifying the same ticket within a session.
+  const _slaNotified = new Set();
+
+  const checkSlaBreaches = async () => {
+    try {
+      const io = getIO();
+      if (!io) return;
+
+      const breached = await prisma.ticket.findMany({
+        where: {
+          slaDeadline: { lt: new Date() },
+          status:      { notIn: ['RESOLVED', 'CLOSED'] },
+        },
+        select: { id: true, ticketNumber: true, title: true, servantId: true, priority: true },
+      });
+
+      for (const ticket of breached) {
+        if (_slaNotified.has(ticket.id)) continue; // already notified this session
+        _slaNotified.add(ticket.id);
+
+        // Notify the assigned servant (real-time, no DB persist)
+        if (ticket.servantId) {
+          notifyServant(ticket.servantId, {
+            ticketId: ticket.id,
+            type:     'SLA_BREACH',
+            title:    'SLA Breach Alert',
+            message:  `Ticket ${ticket.ticketNumber} has exceeded its SLA deadline.`,
+          });
+        }
+
+        // Broadcast to all connected admin clients
+        io.to('admin').emit('sla:breach', {
+          ticketId:     ticket.id,
+          ticketNumber: ticket.ticketNumber,
+          title:        ticket.title,
+          priority:     ticket.priority,
+        });
+      }
+    } catch (err) {
+      console.error('SLA check error:', err.message);
+    }
+  };
+
+  // Run once immediately, then every 10 minutes
+  checkSlaBreaches();
+  setInterval(checkSlaBreaches, 10 * 60 * 1000);
 });
 
 export default app;
