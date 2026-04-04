@@ -170,6 +170,7 @@ cd frontend && npm run preview   # Preview production build locally
 ### Citizen Flow
 - Trilingual interface (English / Filipino / Cebuano)
 - Register with email/phone + password + **OTP verification** (account not created until verified)
+- **Phone-only registration** — ID photo is optional when a phone number is provided; phone-registered accounts are verified via SMS OTP. ID upload label dynamically shows "(optional — phone provided)"
 - **Strong password enforcement** — minimum 8 characters, requires uppercase, lowercase, number, and special character; live strength indicator during registration
 - **OCR-based ID verification** — upload or camera-capture a government-issued ID; Tesseract.js (eng+fil) scans the document, matches the registrant's name, and detects Philippine ID keywords
 - **Three-tier ID verification results:**
@@ -200,10 +201,13 @@ cd frontend && npm run preview   # Preview production build locally
 - **Sidebar navigation** — Servants, Citizens, and Departments each have dedicated sidebar links (`/admin?tab=servants`, `/admin?tab=citizens`, `/admin?tab=departments`)
 - **Inline tab bar** — Overview, Tickets, SLA Breaches
 - System stats with 7-day trend chart and department breakdown
-- Manage servants (create, edit, remove with department assignment)
+- Manage servants (create, edit, remove with department assignment); servant cards display **avg star rating + total ratings**
 - Manage citizens (edit, archive, delete — blocked if citizen has open tickets)
 - Manage departments (create, edit)
 - **ID review workflow** — pending ID count badge on Citizens tab; full-screen ID photo viewer with Approve / Reject actions
+- **Assign servant to ticket** — unassigned tickets show an "Assign" button; opens a modal listing all servants with availability status and workload. Assigned servant is notified via Socket.IO + email
+- **Change department** — each ticket row has a Change Department (building icon) action; reassigns the ticket to a new department and resets it to Pending with a notification to the ticket owner
+- **SLA Breaches** — breach cards for unassigned tickets show an "Assign" button; SLA breach notifications are sent to assigned servants and broadcast to admin via a background scheduler (every 10 min)
 - Archive/reactivate tickets (reactivation requires admin password)
 - Permanently delete tickets with cascade (messages, attachments, notifications)
 - Manage announcements (Info / Alert / Event categories, draft/published)
@@ -327,7 +331,7 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 | GET | `/profile` | JWT | Retrieve authenticated user's or servant's profile |
 | PUT | `/profile` | JWT | Update profile fields + optional avatar upload (multipart) |
 
-### Tickets (`/api/tickets`) — 10 endpoints
+### Tickets (`/api/tickets`) — 11 endpoints
 
 | Method | Endpoint | Auth | Role | Description |
 |--------|----------|:----:|:----:|-------------|
@@ -337,7 +341,8 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 | POST | `/classify` | JWT | Any | AI-classify concern text → suggested department + confidence |
 | GET | `/servant/assigned` | JWT | SERVANT | List tickets assigned to logged-in servant |
 | PATCH | `/:id/status` | JWT | SERVANT | Update ticket status (PENDING → IN_PROGRESS → RESOLVED → CLOSED) |
-| PATCH | `/:id/assign` | JWT | SERVANT | Assign/reassign ticket to a specific servant |
+| PATCH | `/:id/assign` | JWT | SERVANT or ADMIN | Servant self-assigns; admin passes `servantId` in body. Notifies servant via socket + email |
+| PATCH | `/:id/department` | JWT | ADMIN | Change ticket department — clears servant assignment, resets to PENDING, notifies owner |
 | POST | `/:id/message` | JWT | Any | Send message with optional file attachments (multipart, up to 5 files) |
 | PATCH | `/:id/escalate` | JWT | SERVANT | Escalate ticket for higher-priority handling |
 | POST | `/:id/feedback` | JWT | CLIENT | Submit satisfaction rating (1-5 stars) + optional comment |
@@ -365,7 +370,7 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 | GET | `/stats` | SERVANT | My stats: total, pending, in-progress, resolved, urgent, avg rating |
 | PATCH | `/heartbeat` | SERVANT | Update `lastActiveAt` timestamp (called every ~120s by frontend) |
 | PATCH | `/status` | SERVANT | Update availability (AVAILABLE / BUSY / OFFLINE) |
-| GET | `/` | ADMIN | All servants with department, ticket count (sorted A-Z) |
+| GET | `/` | ADMIN | All servants with department, ticket count, `avgRating`, `totalRatings` (sorted A-Z) |
 | POST | `/` | ADMIN | Create servant (multipart: avatar optional) |
 | PUT | `/:id` | ADMIN | Update servant (multipart: avatar optional, old avatar deleted on replace) |
 | DELETE | `/:id` | ADMIN | Delete servant (open tickets re-queued: servantId cleared, status→PENDING) |
@@ -408,7 +413,7 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 | PATCH | `/:id/read` | JWT | Mark single notification as read |
 | PATCH | `/read-all` | JWT | Mark all unread notifications as read |
 
-**Total: 61 endpoints across 8 route files**
+**Total: 62 endpoints across 8 route files**
 
 ---
 
@@ -455,15 +460,15 @@ egov/
 │   │   └── migrations/               # Prisma migration history
 │   │
 │   ├── src/
-│   │   ├── index.js                   # Express app bootstrap, route mounting, middleware
+│   │   ├── index.js                   # Express app bootstrap, route mounting, middleware, SLA scheduler
 │   │   ├── controllers/
 │   │   │   ├── authController.js      # Register, login, OTP, Firebase, password validation, ID status
 │   │   │   └── ticketController.js    # Ticket CRUD, messaging, AI classification, file attachments
 │   │   ├── routes/
 │   │   │   ├── auth.js                # 16 endpoints — registration, login, OTP, password reset, ID reupload, profile
-│   │   │   ├── tickets.js             # 10 endpoints — submit, list, chat, escalate, feedback
+│   │   │   ├── tickets.js             # 11 endpoints — submit, list, chat, assign (servant+admin), change dept, escalate, feedback
 │   │   │   ├── admin.js               # 11 endpoints — stats, users, reports, SLA, archive, ID review
-│   │   │   ├── servants.js            # 7 endpoints — stats, heartbeat, status, CRUD
+│   │   │   ├── servants.js            # 7 endpoints — stats, heartbeat, status, CRUD (GET includes avgRating)
 │   │   │   ├── announcements.js       # 6 endpoints — public list, admin CRUD, Socket.IO broadcast
 │   │   │   ├── departments.js         # 4 endpoints — public list, admin CRUD
 │   │   │   ├── directory.js           # 5 endpoints — public list, admin CRUD
@@ -504,12 +509,12 @@ egov/
 │   │   │
 │   │   ├── pages/                     # 12 page components
 │   │   │   ├── LandingPage.jsx        # Public: hero, features, departments, CTA
-│   │   │   ├── AuthPage.jsx           # Login, register (OCR ID verify + camera + password strength), forgot password, ID reupload
+│   │   │   ├── AuthPage.jsx           # Login, register (OCR ID verify + camera + password strength + phone-only option), forgot password, ID reupload
 │   │   │   ├── ClientDashboard.jsx    # Citizen: ticket overview, quick submit
 │   │   │   ├── SubmitConcern.jsx      # 2-step: text/voice/category → AI routing + file upload
 │   │   │   ├── TrackTicket.jsx        # Ticket detail: status timeline, real-time chat, feedback
 │   │   │   ├── ServantDashboard.jsx   # Servant: assigned tickets, actions, stats
-│   │   │   ├── AdminDashboard.jsx     # Admin: inline tabs (overview/tickets/sla) + sidebar tabs (servants/citizens/departments)
+│   │   │   ├── AdminDashboard.jsx     # Admin: inline tabs (overview/tickets/sla) + sidebar tabs (servants/citizens/departments); assign servant modal; change dept modal; servant star ratings
 │   │   │   ├── ReportsPage.jsx        # Analytics: period selector, KPIs, charts, CSV/PDF export
 │   │   │   ├── AnnouncementsPage.jsx  # Public announcements with category filter
 │   │   │   ├── DirectoryPage.jsx      # Official directory with category filter
@@ -595,6 +600,8 @@ Tuned for Hostinger Business shared hosting (40 entry process limit):
 | Batch DB queries | admin stats/reports | 2 queries for 365-day trend instead of 730 |
 | Static asset caching | JS/CSS: 7 days | Browser cache eliminates repeat downloads |
 | Client-side OCR | Tesseract.js | No server round-trip for ID verification |
+| SLA scheduler | `setInterval` 10 min | Single deduped loop vs per-request checks; in-memory Set avoids repeat notifications |
+| avgRating aggregation | 2 DB queries (servant list) | Batch feedback fetch + JS aggregation instead of N+1 per-servant queries |
 
 ---
 
