@@ -17,7 +17,11 @@ const CITIZEN_FAQ = [
     items: [
       {
         q: 'How do I register for an account?',
-        a: 'Click "Register" on the login page. Fill in your name, email or phone number, barangay, and password. You must also upload a valid government-issued ID for verification. After submitting, you will receive an OTP via SMS or email to verify your identity.',
+        a: 'Click "Register" on the login page. Fill in your name, barangay, and password. You can register with an email address, a phone number, or both. After submitting, you will receive an OTP via SMS (if phone provided) or email to verify your identity.',
+      },
+      {
+        q: 'Do I need to upload a government ID to register?',
+        a: 'An ID photo is required only when you register without a phone number. If you provide a valid phone number, the ID upload is optional — the label shows "(optional — phone provided)". Your account will be verified via SMS OTP instead. Uploading an ID is still recommended for faster access and to build a verified profile.',
       },
       {
         q: 'What types of ID are accepted for verification?',
@@ -48,7 +52,7 @@ const CITIZEN_FAQ = [
       },
       {
         q: 'How is my concern routed to the right department?',
-        a: 'An AI classifier analyzes your concern text and automatically determines which department can best handle it. You can review the suggested department before submitting and change it if needed.',
+        a: 'An AI classifier analyzes your concern text and automatically determines which department can best handle it. You can review the suggested department before submitting and change it if needed. An admin may also reassign your ticket to a different department if necessary.',
       },
       {
         q: 'What are the different ticket statuses?',
@@ -71,7 +75,11 @@ const CITIZEN_FAQ = [
       },
       {
         q: 'How will I know when there are updates?',
-        a: 'You receive in-app notifications (with sound alerts) for status changes, new messages, and important updates. Notifications appear in the sidebar and as popup alerts.',
+        a: 'You receive in-app notifications (with sound alerts) for status changes, new messages, and important updates. Notifications appear in the sidebar bell. Clicking a notification takes you directly to the relevant ticket.',
+      },
+      {
+        q: 'Why was my ticket reassigned to a different department?',
+        a: 'An admin may change the department if your concern is better handled elsewhere. When this happens, you will receive a notification and the ticket is reset to Pending so a servant in the new department can be assigned.',
       },
     ],
   },
@@ -86,7 +94,7 @@ const CITIZEN_FAQ = [
       },
       {
         q: 'What happens if my concern is not resolved on time?',
-        a: 'If the SLA deadline passes without resolution, the ticket is flagged as an SLA breach. The admin monitors all breaches and takes action to expedite resolution.',
+        a: 'If the SLA deadline passes without resolution, the ticket is flagged as an SLA breach. The admin is automatically notified and will take action to assign or escalate resolution.',
       },
       {
         q: 'Can I rate the service I received?',
@@ -143,7 +151,7 @@ const SERVANT_FAQ = [
     items: [
       {
         q: 'How are tickets assigned to me?',
-        a: 'Tickets can be assigned by the admin or self-assigned by any servant in your department. You will receive a real-time notification when a ticket is assigned to you.',
+        a: 'Tickets can be self-assigned from your dashboard or manually assigned to you by the admin. The admin can pick any available servant directly from the Tickets table or from the SLA Breaches tab. You will receive a real-time in-app notification (and an email) the moment a ticket is assigned to you.',
       },
       {
         q: 'How do I update a ticket\'s status?',
@@ -193,7 +201,7 @@ const SERVANT_FAQ = [
       },
       {
         q: 'What happens when an SLA deadline passes?',
-        a: 'The ticket is flagged as an SLA breach and appears on the admin\'s SLA Breaches tab. The admin may re-assign or escalate it. Aim to resolve tickets before their deadline.',
+        a: 'The ticket is flagged as an SLA breach. You will receive a real-time notification alerting you that the ticket has exceeded its SLA deadline. The ticket also appears on the admin\'s SLA Breaches tab where an admin can reassign or escalate it. Aim to resolve tickets before their deadline to avoid breach alerts.',
       },
       {
         q: 'How is my performance tracked?',
@@ -218,6 +226,10 @@ const SERVANT_FAQ = [
         q: 'Can I upload a profile photo?',
         a: 'Yes. Click "Edit Profile" in the sidebar to upload or change your avatar photo. The photo appears on your servant card in the admin panel.',
       },
+      {
+        q: 'Can citizens rate my service?',
+        a: 'Yes. Once a ticket is resolved, the citizen can leave a 1–5 star rating and optional comment. Your average rating (avgRating) and total number of ratings are displayed on your servant card in the admin\'s Servants page, giving the admin visibility into service quality.',
+      },
     ],
   },
 ];
@@ -241,6 +253,10 @@ const ADMIN_FAQ = [
         q: 'How often does the data refresh?',
         a: 'The overview and tickets load on tab switch. The Servants list auto-refreshes every 2 minutes while you are on that page. Use the Refresh button to manually reload data at any time.',
       },
+      {
+        q: 'How am I notified about SLA breaches?',
+        a: 'The server automatically checks for open tickets past their SLA deadline every 10 minutes. When a breach is detected you receive a real-time SLA breach alert in the admin panel. Each breach is reported only once per server session so you are not spammed. You can also see all breached tickets in the SLA Breaches tab at any time.',
+      },
     ],
   },
   {
@@ -261,8 +277,16 @@ const ADMIN_FAQ = [
         a: 'Click the trash icon on any ticket (active or archived). This permanently deletes the ticket and all related messages, attachments, notifications, and feedback. This action cannot be undone.',
       },
       {
+        q: 'How do I manually assign a servant to an unassigned ticket?',
+        a: 'In the Tickets tab, unassigned tickets show an "Assign" button (person icon) in the "Assigned To" column. Click it to open the servant assignment modal, which lists all servants with their current status (Online/Busy/Offline) and workload bar. Select the servant you want and click "Assign". The servant receives an immediate in-app and email notification. You can also assign directly from the SLA Breaches tab for breached unassigned tickets.',
+      },
+      {
+        q: 'How do I change a ticket\'s department?',
+        a: 'In the Tickets tab, click the building icon (change department) in the Actions column of any ticket row. A modal will warn you that changing the department resets the current servant assignment and sets the ticket back to Pending. Select the new department and confirm. The ticket owner is notified automatically.',
+      },
+      {
         q: 'What is the SLA Breaches tab?',
-        a: 'It shows all open tickets that have passed their SLA deadline without being resolved, ordered by oldest first. Use this to prioritise follow-up with servants or re-assign to available staff.',
+        a: 'It shows all open tickets that have passed their SLA deadline without being resolved, ordered by oldest first. Unassigned breached tickets show an "Assign" button directly on the card so you can quickly dispatch a servant without leaving the tab.',
       },
     ],
   },
@@ -286,6 +310,10 @@ const ADMIN_FAQ = [
       {
         q: 'What does the workload bar mean?',
         a: 'The workload bar shows the servant\'s current active ticket count as a percentage of a notional maximum of 10. Green < 50%, yellow 50–79%, red ≥ 80%.',
+      },
+      {
+        q: 'Where can I see a servant\'s citizen ratings?',
+        a: 'Each servant card on the Servants page displays the servant\'s average star rating (e.g. ★ 4.2) and total rating count. Ratings are aggregated from citizen feedback on resolved tickets. This helps you identify top-performing servants and those who may need coaching.',
       },
     ],
   },
