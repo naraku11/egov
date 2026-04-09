@@ -646,6 +646,10 @@ export default function AdminDashboard() {
   const [servants, setServants] = useState([]);
   /** Tickets whose SLA deadline has passed — loaded when the SLA tab is opened */
   const [slaBreaches, setSlaBreaches] = useState([]);
+  /** Archived SLA breach tickets (status CLOSED) — loaded alongside active breaches */
+  const [slaArchivedBreaches, setSlaArchivedBreaches] = useState([]);
+  /** Sub-tab within SLA: 'active' | 'archived' */
+  const [slaSubTab, setSlaSubTab] = useState('active');
   /** All registered citizens — loaded when the Citizens tab is first opened */
   const [citizens, setCitizens] = useState([]);
   /** The 5 most recently submitted tickets shown in the Overview sidebar */
@@ -785,8 +789,12 @@ export default function AdminDashboard() {
         const { data } = await api.get('/departments');
         setDepartments(data || []);
       } else if (targetTab === 'sla') {
-        const { data } = await api.get('/admin/sla-breaches');
-        setSlaBreaches(data || []);
+        const [activeRes, archivedRes] = await Promise.all([
+          api.get('/admin/sla-breaches'),
+          api.get('/admin/sla-breaches?archived=true'),
+        ]);
+        setSlaBreaches(activeRes.data || []);
+        setSlaArchivedBreaches(archivedRes.data || []);
       }
     } catch {
       toast.error('Failed to load data');
@@ -939,6 +947,22 @@ export default function AdminDashboard() {
       await api.patch(`/admin/tickets/${ticket.id}/archive`);
       toast.success(`Ticket #${ticket.ticketNumber} archived`);
       fetchTabData('tickets');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    }
+  };
+
+  const handleArchiveSlaTicket = async (ticket) => {
+    const isArchived = ticket.status === 'CLOSED';
+    try {
+      await api.patch(`/admin/tickets/${ticket.id}/archive`);
+      toast.success(`Ticket #${ticket.ticketNumber} ${isArchived ? 'restored' : 'archived'}`);
+      const [activeRes, archivedRes] = await Promise.all([
+        api.get('/admin/sla-breaches'),
+        api.get('/admin/sla-breaches?archived=true'),
+      ]);
+      setSlaBreaches(activeRes.data || []);
+      setSlaArchivedBreaches(archivedRes.data || []);
     } catch (err) {
       toast.error(err.response?.data?.error || err.message);
     }
@@ -1875,63 +1899,152 @@ export default function AdminDashboard() {
         )}
 
         {/* ── SLA BREACHES TAB ─────────────────────────────────────────────────
-            List of tickets that have passed their SLA deadline without being
-            resolved. Each entry shows the deadline timestamp and a relative
-            "overdue by X" label.
+            Active sub-tab: open tickets past their SLA deadline.
+            Archived sub-tab: CLOSED tickets that had SLA breaches.
         ────────────────────────────────────────────────────────────────────── */}
         {tab === 'sla' && (
           <div className="card animate-fadeIn">
-            <div className="flex items-center gap-2 mb-5">
+            {/* Header */}
+            <div className="flex items-center gap-2 mb-4">
               <AlertTriangle className="w-5 h-5 text-red-600" />
               <h3 className="font-semibold text-gray-900">SLA Breach Tickets</h3>
-              <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-medium">
-                {slaBreaches.length} breached
-              </span>
             </div>
-            {slaBreaches.length === 0 ? (
-              /* All-clear state — shown when no tickets have breached their SLA */
-              <div className="text-center py-12 text-gray-400">
-                <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-300" />
-                <p className="font-medium text-green-600">No SLA breaches — all tickets are within SLA.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {slaBreaches.map(ticket => (
-                  <div key={ticket.id} className="flex items-start gap-4 p-4 bg-red-50 border border-red-200 rounded-xl">
-                    <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="font-mono text-xs text-gray-600">{ticket.ticketNumber}</span>
-                        <StatusBadge status={ticket.status} />
-                        <PriorityBadge priority={ticket.priority} />
+
+            {/* Sub-tab switcher */}
+            <div className="flex border-b border-gray-200 mb-5 -mt-1">
+              <button
+                onClick={() => setSlaSubTab('active')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  slaSubTab === 'active'
+                    ? 'text-red-600 border-red-600'
+                    : 'text-gray-400 border-transparent hover:text-gray-600'
+                }`}
+              >
+                Active
+                {slaBreaches.length > 0 && (
+                  <span className="ml-1.5 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">
+                    {slaBreaches.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setSlaSubTab('archived')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  slaSubTab === 'archived'
+                    ? 'text-amber-600 border-amber-600'
+                    : 'text-gray-400 border-transparent hover:text-gray-600'
+                }`}
+              >
+                Archived
+                {slaArchivedBreaches.length > 0 && (
+                  <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
+                    {slaArchivedBreaches.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* ── Active SLA breaches ── */}
+            {slaSubTab === 'active' && (
+              slaBreaches.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-300" />
+                  <p className="font-medium text-green-600">No SLA breaches — all tickets are within SLA.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {slaBreaches.map(ticket => (
+                    <div key={ticket.id} className="flex items-start gap-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+                      <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="font-mono text-xs text-gray-600">{ticket.ticketNumber}</span>
+                          <StatusBadge status={ticket.status} />
+                          <PriorityBadge priority={ticket.priority} />
+                        </div>
+                        <p className="font-medium text-gray-900 text-sm">{ticket.title}</p>
+                        <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-gray-500">
+                          <span>🏛️ {ticket.department?.name}</span>
+                          {ticket.servant && <span>👤 {ticket.servant.name}</span>}
+                          <span>👥 {ticket.user?.name}</span>
+                        </div>
                       </div>
-                      <p className="font-medium text-gray-900 text-sm">{ticket.title}</p>
-                      <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-gray-500">
-                        <span>🏛️ {ticket.department?.name}</span>
-                        {ticket.servant && <span>👤 {ticket.servant.name}</span>}
-                        <span>👥 {ticket.user?.name}</span>
+                      <div className="text-right flex-shrink-0 space-y-1.5">
+                        <p className="text-xs text-red-700 font-semibold">SLA Deadline</p>
+                        <p className="text-xs text-red-600">{format(new Date(ticket.slaDeadline), 'MMM d, h:mm a')}</p>
+                        <p className="text-xs text-gray-400">
+                          {formatDistanceToNow(new Date(ticket.slaDeadline), { addSuffix: true })}
+                        </p>
+                        <div className="flex items-center gap-1.5 justify-end">
+                          {!ticket.servant && (
+                            <button
+                              onClick={() => openAssignModal(ticket)}
+                              className="flex items-center gap-1 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 px-2 py-1 rounded-lg transition-colors"
+                            >
+                              <UserCheck className="w-3 h-3" />
+                              Assign
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleArchiveSlaTicket(ticket)}
+                            className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white hover:bg-gray-100 border border-gray-200 px-2 py-1 rounded-lg transition-colors"
+                            title="Archive this breach ticket"
+                          >
+                            <Archive className="w-3 h-3" />
+                            Archive
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    {/* SLA deadline, relative time, and assign button */}
-                    <div className="text-right flex-shrink-0 space-y-1.5">
-                      <p className="text-xs text-red-700 font-semibold">SLA Deadline</p>
-                      <p className="text-xs text-red-600">{format(new Date(ticket.slaDeadline), 'MMM d, h:mm a')}</p>
-                      <p className="text-xs text-gray-400">
-                        {formatDistanceToNow(new Date(ticket.slaDeadline), { addSuffix: true })}
-                      </p>
-                      {!ticket.servant && (
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* ── Archived SLA breaches ── */}
+            {slaSubTab === 'archived' && (
+              slaArchivedBreaches.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <Archive className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p className="font-medium text-gray-500">No archived SLA breach tickets.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {slaArchivedBreaches.map(ticket => (
+                    <div key={ticket.id} className="flex items-start gap-4 p-4 bg-gray-50 border border-gray-200 rounded-xl">
+                      <Archive className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="font-mono text-xs text-gray-600">{ticket.ticketNumber}</span>
+                          <StatusBadge status={ticket.status} />
+                          <PriorityBadge priority={ticket.priority} />
+                        </div>
+                        <p className="font-medium text-gray-700 text-sm">{ticket.title}</p>
+                        <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-gray-400">
+                          <span>🏛️ {ticket.department?.name}</span>
+                          {ticket.servant && <span>👤 {ticket.servant.name}</span>}
+                          <span>👥 {ticket.user?.name}</span>
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0 space-y-1.5">
+                        <p className="text-xs text-gray-500 font-semibold">SLA Deadline</p>
+                        <p className="text-xs text-gray-500">{format(new Date(ticket.slaDeadline), 'MMM d, h:mm a')}</p>
+                        <p className="text-xs text-gray-400">
+                          {formatDistanceToNow(new Date(ticket.slaDeadline), { addSuffix: true })}
+                        </p>
                         <button
-                          onClick={() => openAssignModal(ticket)}
-                          className="flex items-center gap-1 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 px-2 py-1 rounded-lg transition-colors ml-auto"
+                          onClick={() => handleArchiveSlaTicket(ticket)}
+                          className="flex items-center gap-1 text-xs font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 border border-primary-200 px-2 py-1 rounded-lg transition-colors ml-auto"
+                          title="Restore to active SLA breaches"
                         >
-                          <UserCheck className="w-3 h-3" />
-                          Assign
+                          <RefreshCw className="w-3 h-3" />
+                          Restore
                         </button>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )
             )}
           </div>
         )}

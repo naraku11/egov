@@ -403,19 +403,19 @@ router.get('/reports', authenticate, requireAdmin, async (req, res, next) => {
  */
 router.get('/sla-breaches', authenticate, requireAdmin, async (req, res, next) => {
   try {
+    const archived = req.query.archived === 'true';
     const tickets = await prisma.ticket.findMany({
       where: {
-        // Deadline is in the past
         slaDeadline: { lt: new Date() },
-        // Still open — not yet resolved or closed
-        status: { notIn: ['RESOLVED', 'CLOSED'] },
+        status: archived
+          ? 'CLOSED'
+          : { notIn: ['RESOLVED', 'CLOSED'] },
       },
       include: {
         user: { select: { name: true } },
         department: { select: { name: true, color: true } },
         servant: { select: { name: true } },
       },
-      // Most overdue first so admins can triage in order
       orderBy: { slaDeadline: 'asc' },
     });
     res.json(tickets);
