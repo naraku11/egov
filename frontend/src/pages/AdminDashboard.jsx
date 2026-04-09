@@ -650,6 +650,12 @@ export default function AdminDashboard() {
   const [slaArchivedBreaches, setSlaArchivedBreaches] = useState([]);
   /** Sub-tab within SLA: 'active' | 'archived' */
   const [slaSubTab, setSlaSubTab] = useState('active');
+  /** SLA breach ticket staged for restoration — drives the password confirm modal */
+  const [slaRestoringTicket, setSlaRestoringTicket] = useState(null);
+  /** Admin password entered in the SLA restore modal */
+  const [slaRestorePassword, setSlaRestorePassword] = useState('');
+  /** True while the SLA restore API call is in flight */
+  const [slaRestoreLoading, setSlaRestoreLoading] = useState(false);
   /** All registered citizens — loaded when the Citizens tab is first opened */
   const [citizens, setCitizens] = useState([]);
   /** The 5 most recently submitted tickets shown in the Overview sidebar */
@@ -953,10 +959,15 @@ export default function AdminDashboard() {
   };
 
   const handleArchiveSlaTicket = async (ticket) => {
-    const isArchived = ticket.status === 'CLOSED';
+    // Restoring a CLOSED ticket requires password — open the modal instead
+    if (ticket.status === 'CLOSED') {
+      setSlaRestoringTicket(ticket);
+      setSlaRestorePassword('');
+      return;
+    }
     try {
       await api.patch(`/admin/tickets/${ticket.id}/archive`);
-      toast.success(`Ticket #${ticket.ticketNumber} ${isArchived ? 'restored' : 'archived'}`);
+      toast.success(`Ticket #${ticket.ticketNumber} archived`);
       const [activeRes, archivedRes] = await Promise.all([
         api.get('/admin/sla-breaches'),
         api.get('/admin/sla-breaches?archived=true'),
@@ -965,6 +976,27 @@ export default function AdminDashboard() {
       setSlaArchivedBreaches(archivedRes.data || []);
     } catch (err) {
       toast.error(err.response?.data?.error || err.message);
+    }
+  };
+
+  const handleSlaRestoreTicket = async () => {
+    if (!slaRestoringTicket) return;
+    setSlaRestoreLoading(true);
+    try {
+      await api.patch(`/admin/tickets/${slaRestoringTicket.id}/archive`, { password: slaRestorePassword });
+      toast.success(`Ticket #${slaRestoringTicket.ticketNumber} restored`);
+      setSlaRestoringTicket(null);
+      setSlaRestorePassword('');
+      const [activeRes, archivedRes] = await Promise.all([
+        api.get('/admin/sla-breaches'),
+        api.get('/admin/sla-breaches?archived=true'),
+      ]);
+      setSlaBreaches(activeRes.data || []);
+      setSlaArchivedBreaches(archivedRes.data || []);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to restore ticket');
+    } finally {
+      setSlaRestoreLoading(false);
     }
   };
 
@@ -2321,6 +2353,46 @@ export default function AdminDashboard() {
                 className="btn-primary flex-1 disabled:opacity-50"
               >
                 {reactivateLoading ? 'Verifying...' : 'Reactivate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SLA breach restore (password) modal */}
+      {slaRestoringTicket && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Restore SLA Breach Ticket</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Enter your admin password to restore ticket{' '}
+              <span className="font-mono font-bold">#{slaRestoringTicket.ticketNumber}</span> to active SLA breaches.
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Admin Password</label>
+              <input
+                type="password"
+                className="input-field w-full"
+                placeholder="Enter your password"
+                value={slaRestorePassword}
+                onChange={e => setSlaRestorePassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSlaRestoreTicket()}
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setSlaRestoringTicket(null); setSlaRestorePassword(''); }}
+                className="btn-secondary flex-1"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSlaRestoreTicket}
+                disabled={!slaRestorePassword || slaRestoreLoading}
+                className="btn-primary flex-1 disabled:opacity-50"
+              >
+                {slaRestoreLoading ? 'Verifying...' : 'Restore'}
               </button>
             </div>
           </div>
