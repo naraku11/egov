@@ -884,7 +884,7 @@ export default function AdminDashboard() {
 
   const handleArchiveCitizen = async (citizen) => {
     try {
-      const { data } = await api.patch(`/admin/users/${citizen.id}/archive`);
+      const { data } = await api.patch(`/admin/users/${citizen.id}/archive`, {});
       toast.success(`${citizen.name} ${data.isVerified ? 'unarchived' : 'archived'}`);
       fetchTabData('citizens');
     } catch (err) {
@@ -950,7 +950,7 @@ export default function AdminDashboard() {
 
   const handleArchiveTicket = async (ticket) => {
     try {
-      await api.patch(`/admin/tickets/${ticket.id}/archive`);
+      await api.patch(`/admin/tickets/${ticket.id}/archive`, {});
       toast.success(`Ticket #${ticket.ticketNumber} archived`);
       fetchTabData('tickets');
     } catch (err) {
@@ -966,7 +966,7 @@ export default function AdminDashboard() {
       return;
     }
     try {
-      await api.patch(`/admin/tickets/${ticket.id}/archive`);
+      await api.patch(`/admin/tickets/${ticket.id}/archive`, {});
       toast.success(`Ticket #${ticket.ticketNumber} archived`);
       const [activeRes, archivedRes] = await Promise.all([
         api.get('/admin/sla-breaches'),

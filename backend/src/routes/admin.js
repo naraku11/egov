@@ -611,7 +611,7 @@ router.delete('/tickets/:id', authenticate, requireAdmin, async (req, res, next)
 router.patch('/tickets/:id/archive', authenticate, requireAdmin, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { password } = req.body;
+    const { password } = req.body || {};
     const ticket = await prisma.ticket.findUnique({ where: { id } });
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
