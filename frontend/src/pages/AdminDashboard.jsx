@@ -40,6 +40,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useSocket } from '../contexts/SocketContext.jsx';
 import SidebarLayout from '../components/SidebarLayout.jsx';
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx';
 
@@ -624,6 +625,7 @@ const TABS = ['overview', 'tickets', 'sla'];
 export default function AdminDashboard() {
   // Logged-in admin user (used for the greeting)
   const { user } = useAuth();
+  const socket = useSocket();
 
   // ── Tab state (synced with URL ?tab= param for sidebar navigation) ─────────
   const [searchParams, setSearchParams] = useSearchParams();
@@ -769,6 +771,20 @@ export default function AdminDashboard() {
     }
     return () => clearInterval(servantPollRef.current);
   }, [tab]);
+
+  /**
+   * Real-time servant status effect.
+   * Updates the servant card status badge instantly when the backend emits
+   * `servant:statusUpdate` (triggered by login, logout, ticket assignment, or
+   * workload threshold crossing).
+   */
+  useEffect(() => {
+    const onStatusUpdate = ({ servantId, status }) => {
+      setServants(prev => prev.map(s => s.id === servantId ? { ...s, status } : s));
+    };
+    socket.on('servant:statusUpdate', onStatusUpdate);
+    return () => socket.off('servant:statusUpdate', onStatusUpdate);
+  }, [socket]);
 
   // ── Data fetching helpers ───────────────────────────────────────────────────
 

@@ -22,6 +22,34 @@ import { createNotification, notifyServant, sendTicketAssignedEmail } from '../s
 import { getIO } from '../lib/socket.js';
 import path from 'path';
 
+/** Workload threshold: at or above this many open tickets the servant is auto-set BUSY. */
+const BUSY_THRESHOLD = 5;
+
+/**
+ * Re-evaluates a servant's availability status based on their current workload.
+ * Called after any workload increment or decrement.
+ *  - workload >= BUSY_THRESHOLD && not OFFLINE → BUSY
+ *  - workload < BUSY_THRESHOLD && currently BUSY → back to AVAILABLE
+ * Emits `servant:statusUpdate` to the `admin` room so the admin panel updates live.
+ */
+async function syncServantStatus(servantId) {
+  try {
+    const s = await prisma.servant.findUnique({
+      where: { id: servantId },
+      select: { workload: true, status: true },
+    });
+    if (!s || s.status === 'OFFLINE') return;
+
+    let newStatus = null;
+    if (s.workload >= BUSY_THRESHOLD && s.status !== 'BUSY') newStatus = 'BUSY';
+    else if (s.workload < BUSY_THRESHOLD && s.status === 'BUSY') newStatus = 'AVAILABLE';
+    if (!newStatus) return;
+
+    await prisma.servant.update({ where: { id: servantId }, data: { status: newStatus } });
+    try { getIO()?.to('admin').emit('servant:statusUpdate', { servantId, status: newStatus }); } catch {}
+  } catch {}
+}
+
 /**
  * Generates a unique human-readable ticket number in the format
  * `TKT-YYYYMMDD-XXXX` where XXXX is a random 4-digit number.
@@ -158,6 +186,7 @@ export const createTicket = async (req, res, next) => {
         where: { id: servant.id },
         data: { workload: { increment: 1 } },
       });
+      await syncServantStatus(servant.id);
     }
 
     // Insert an automatic system message as the first thread entry
@@ -412,6 +441,7 @@ export const updateTicketStatus = async (req, res, next) => {
         where: { id: req.servant.id },
         data: { workload: { decrement: 1 } },
       });
+      await syncServantStatus(req.servant.id);
     }
 
     // Broadcast the status change in real time
@@ -582,6 +612,7 @@ export const assignTicket = async (req, res, next) => {
       where: { id: servantId },
       data: { workload: { increment: 1 } },
     });
+    await syncServantStatus(servantId);
 
     // Notify assigned servant via Socket.IO + email
     notifyServant(servantId, {

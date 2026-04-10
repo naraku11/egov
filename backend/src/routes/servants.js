@@ -40,6 +40,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { authenticate, requireAdmin, requireServant } from '../middleware/auth.js';
 import { avatarUpload } from '../middleware/upload.js';
+import { getIO } from '../lib/socket.js';
 
 // Resolve __dirname for ES module context (not available natively in ESM)
 const __filename = fileURLToPath(import.meta.url);
@@ -149,8 +150,9 @@ router.patch('/status', authenticate, requireServant, async (req, res, next) => 
     const { status } = req.body;
     const updated = await prisma.servant.update({
       where: { id: req.servant.id },
-      data:  { status, lastActiveAt: new Date() }, // record when the status changed
+      data:  { status, lastActiveAt: new Date() },
     });
+    try { getIO()?.to('admin').emit('servant:statusUpdate', { servantId: req.servant.id, status: updated.status }); } catch {}
     res.json({ status: updated.status });
   } catch (err) {
     next(err);

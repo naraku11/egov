@@ -25,6 +25,7 @@ import dns from 'dns';
 import { promisify } from 'util';
 import { sendWelcomeEmail, sendResetCodeEmail, sendOtpEmail } from '../services/notification.js';
 import { verifyFirebaseToken } from '../lib/firebase.js';
+import { getIO } from '../lib/socket.js';
 
 const resolveMx = promisify(dns.resolveMx);
 
@@ -361,10 +362,10 @@ export const servantLogin = async (req, res, next) => {
     const valid = await bcrypt.compare(password, servant.password);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    // Record the login time for activity tracking
-    await prisma.servant.update({ where: { id: servant.id }, data: { lastActiveAt: new Date() } });
+    // Record the login time and set status to AVAILABLE
+    await prisma.servant.update({ where: { id: servant.id }, data: { lastActiveAt: new Date(), status: 'AVAILABLE' } });
+    try { getIO()?.to('admin').emit('servant:statusUpdate', { servantId: servant.id, status: 'AVAILABLE' }); } catch {}
 
-    // Token type 'servant' lets middleware distinguish them from regular users
     const token = generateToken(servant.id, 'servant');
     res.json({
       token,
@@ -374,7 +375,7 @@ export const servantLogin = async (req, res, next) => {
         email: servant.email,
         position: servant.position,
         department: servant.department,
-        status: servant.status,
+        status: 'AVAILABLE',
         avatarUrl: servant.avatarUrl || null,
       },
     });
@@ -665,8 +666,9 @@ export const unifiedLogin = async (req, res, next) => {
       if (servant) {
         const valid = await bcrypt.compare(password, servant.password);
         if (valid) {
-          // Keep the last-active timestamp current for activity monitoring
-          await prisma.servant.update({ where: { id: servant.id }, data: { lastActiveAt: new Date() } });
+          // Record login time and set status to AVAILABLE
+          await prisma.servant.update({ where: { id: servant.id }, data: { lastActiveAt: new Date(), status: 'AVAILABLE' } });
+          try { getIO()?.to('admin').emit('servant:statusUpdate', { servantId: servant.id, status: 'AVAILABLE' }); } catch {}
           const token = generateToken(servant.id, 'servant');
           return res.json({
             type: 'servant',
@@ -674,7 +676,7 @@ export const unifiedLogin = async (req, res, next) => {
             servant: {
               id: servant.id, name: servant.name, email: servant.email,
               position: servant.position, department: servant.department,
-              status: servant.status, avatarUrl: servant.avatarUrl || null,
+              status: 'AVAILABLE', avatarUrl: servant.avatarUrl || null,
             },
           });
         }
