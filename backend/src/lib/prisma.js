@@ -19,23 +19,36 @@
 
 import { PrismaClient } from '@prisma/client';
 
-// Reuse an existing client stored on the global object (dev hot-reload guard),
-// or create a fresh one if none exists yet.
-// On shared hosting (Hostinger), limit the connection pool to 5 connections
-// to avoid exhausting the host's MySQL connection limit.
-const prisma = globalThis.__prisma ?? new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL
-        ? process.env.DATABASE_URL + (process.env.DATABASE_URL.includes('?') ? '&' : '?') + 'connection_limit=3&pool_timeout=10'
-        : undefined,
-    },
-  },
-});
+/**
+ * Build the DATABASE_URL with Hostinger-safe connection parameters.
+ *
+ * connection_limit=1  — single connection; the Rust query engine spawns its
+ *   own internal pool, so one external slot is enough and avoids exhausting
+ *   Hostinger's per-account MySQL connection cap.
+ * pool_timeout=15     — wait up to 15 s for a free connection before giving up.
+ * connect_timeout=10  — abort the initial TCP handshake after 10 s.
+ * socket_timeout=30   — drop a query that has been waiting on the socket for
+ *   30 s; prevents the Rust timer from hanging indefinitely, which is the root
+ *   cause of the "PANIC: timer has gone away" crash on shared hosting.
+ */
+function buildUrl() {
+  const base = process.env.DATABASE_URL;
+  if (!base) return undefined;
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}connection_limit=1&pool_timeout=15&connect_timeout=10&socket_timeout=30`;
+}
 
-// Only persist the instance on globalThis in non-production environments.
-// In production each deployment starts a clean process, so the guard is
-// unnecessary and polluting the global namespace is avoided.
+function createClient() {
+  return new PrismaClient({
+    datasources: { db: { url: buildUrl() } },
+    log: process.env.NODE_ENV === 'production' ? ['error'] : ['error', 'warn'],
+  });
+}
+
+// Reuse an existing client stored on globalThis (dev hot-reload guard),
+// or create a fresh one.
+const prisma = globalThis.__prisma ?? createClient();
+
 if (process.env.NODE_ENV !== 'production') globalThis.__prisma = prisma;
 
 export default prisma;

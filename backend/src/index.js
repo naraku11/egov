@@ -274,6 +274,32 @@ app.use((req, res) => {
 // any of the route handlers or middleware above.
 app.use(errorHandler);
 
+// ── Process-level panic recovery ─────────────────────────────────────────────
+// Prisma's Rust query engine can panic on Hostinger shared hosting (e.g.
+// "PANIC: timer has gone away" due to resource limits).  If the panic reaches
+// here rather than the Express error handler (e.g. from a background task or
+// a promise that was never awaited), log it and exit so PM2 restarts cleanly.
+const isPrismaPanic = (err) =>
+  err?.name === 'PrismaClientRustPanicError' ||
+  (typeof err?.message === 'string' && err.message.includes('PANIC'));
+
+process.on('uncaughtException', (err) => {
+  if (isPrismaPanic(err)) {
+    console.error('FATAL uncaughtException — Prisma panic, restarting:', err.message);
+    process.exit(1);
+  }
+  console.error('uncaughtException:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  if (isPrismaPanic(reason)) {
+    console.error('FATAL unhandledRejection — Prisma panic, restarting:', reason?.message);
+    process.exit(1);
+  }
+  console.error('unhandledRejection:', reason);
+});
+
 // ── Start server ──────────────────────────────────────────────────────────────
 
 httpServer.listen(PORT, () => {

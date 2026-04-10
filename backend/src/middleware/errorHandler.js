@@ -30,35 +30,44 @@
  *   Express to recognise the function as an error handler; not called here).
  */
 export const errorHandler = (err, req, res, next) => {
-  // Log the full error details server-side for diagnostics.
   console.error('Error:', err);
 
-  // --- Input / validation failures (thrown by validation libraries) ---
+  // --- Input / validation failures ---
   if (err.name === 'ValidationError') {
     return res.status(400).json({ error: err.message });
   }
 
-  // Multer errors
-  // MulterError is thrown by multer itself (e.g. field name mismatch),
-  // while LIMIT_FILE_SIZE is the code used when the file exceeds the
-  // configured size cap.
+  // --- Multer errors ---
   if (err.name === 'MulterError' || err.code === 'LIMIT_FILE_SIZE') {
     return res.status(400).json({ error: err.message || 'File upload error' });
   }
 
   // --- Prisma ORM error codes ---
 
-  // P2002: Unique constraint violation – the record already exists.
+  // P2002: Unique constraint violation
   if (err.code === 'P2002') {
     return res.status(409).json({ error: 'Record already exists' });
   }
 
-  // P2025: Record not found – e.g. update/delete on a non-existent row.
+  // P2025: Record not found
   if (err.code === 'P2025') {
     return res.status(404).json({ error: 'Record not found' });
   }
 
-  // --- Catch-all: use a status attached to the error, or default to 500. ---
+  // PrismaClientRustPanicError — the query engine has crashed (e.g. Hostinger's
+  // "PANIC: timer has gone away").  The engine cannot recover; send a 503 to
+  // the client then exit so PM2 / the process manager restarts the app cleanly.
+  if (
+    err.name === 'PrismaClientRustPanicError' ||
+    (err.message && err.message.includes('PANIC'))
+  ) {
+    console.error('FATAL: Prisma engine panic — restarting process');
+    try { res.status(503).json({ error: 'Server restarting, please retry in a moment' }); } catch {}
+    setTimeout(() => process.exit(1), 500);
+    return;
+  }
+
+  // --- Catch-all ---
   res.status(err.status || 500).json({
     error: err.message || 'Internal server error',
   });
