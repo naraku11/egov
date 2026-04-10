@@ -12,6 +12,7 @@ AI-powered citizen concern management system that matches residents with the app
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 18.3 · Vite 5.4 · Tailwind CSS 3.4 · Recharts 2.15 |
+| Data Fetching | TanStack Query 5.64 (caching, background refetch, adaptive polling) |
 | Backend | Node.js 18 · Express 5.2 |
 | Database | MySQL 8 · Prisma ORM 6.19 (10 models, 10 enums) |
 | AI — Classification | Claude Haiku 4.5 (`claude-haiku-4-5`) — department routing via tool-use |
@@ -183,7 +184,7 @@ cd frontend && npm run preview   # Preview production build locally
 - Real-time ticket tracking with status timeline
 - Chat with assigned servant with **file attachments** (images, PDFs, docs, videos — up to 5 per message)
 - Star ratings and comments on resolved tickets
-- **Real-time notifications** — sound alerts, announcement popups, unread badge
+- **Real-time notifications** — sound alerts, announcement popups, unread badge; clicking a notification navigates directly to the relevant ticket
 - Browse announcements and barangay directory
 - Edit profile with avatar photo upload
 - **FAQs & Self-Help** section with department contact directory (role-aware — citizens see citizen FAQ)
@@ -191,29 +192,34 @@ cd frontend && npm run preview   # Preview production build locally
 ### Servant Flow
 - Dashboard with assigned tickets, priority indicators, and SLA deadlines
 - Reply to residents in ticket chat with **file attachments**
-- Internal notes with file attachments (visible only to servants)
+- Internal notes with file attachments (visible only to servants and admin)
 - Escalate tickets, update status (in-progress / resolved)
-- Update availability (Available / Busy / Offline)
-- **Real-time socket notifications** — ticket assignments, citizen replies (socket-only, no DB persistence)
-- **Help & FAQs** — servant-specific help center covering ticket management, escalation, SLA, presence
+- **Dynamic availability status** — automatically set to AVAILABLE on login, BUSY when open ticket count reaches threshold, OFFLINE on logout. Status updates broadcast in real-time to the admin panel via Socket.IO
+- Manual override: servant can still change status (Available / Busy / Offline) from the dashboard
+- **Real-time socket notifications** — ticket assignments (in-app + email), citizen replies, SLA breach alerts (socket-only, no DB persistence)
+- **Help & FAQs** — servant-specific help center covering ticket management, escalation, SLA, presence, and star ratings
 
 ### Admin Flow
-- **Sidebar navigation** — Servants, Citizens, and Departments each have dedicated sidebar links (`/admin?tab=servants`, `/admin?tab=citizens`, `/admin?tab=departments`)
+- **Sidebar navigation** — Servants, Citizens, and Departments each have dedicated sidebar links
 - **Inline tab bar** — Overview, Tickets, SLA Breaches
 - System stats with 7-day trend chart and department breakdown
-- Manage servants (create, edit, remove with department assignment); servant cards display **avg star rating + total ratings**
+- Manage servants (create, edit, remove with department assignment); servant cards display **avg star rating + total ratings** aggregated from citizen feedback
+- **Live servant status** — servant cards update in real-time via `servant:statusUpdate` socket events (no manual refresh needed)
 - Manage citizens (edit, archive, delete — blocked if citizen has open tickets)
 - Manage departments (create, edit)
 - **ID review workflow** — pending ID count badge on Citizens tab; full-screen ID photo viewer with Approve / Reject actions
-- **Assign servant to ticket** — unassigned tickets show an "Assign" button; opens a modal listing all servants with availability status and workload. Assigned servant is notified via Socket.IO + email
-- **Change department** — each ticket row has a Change Department (building icon) action; reassigns the ticket to a new department and resets it to Pending with a notification to the ticket owner
-- **SLA Breaches** — breach cards for unassigned tickets show an "Assign" button; SLA breach notifications are sent to assigned servants and broadcast to admin via a background scheduler (every 10 min)
+- **Assign servant to ticket** — unassigned tickets show an "Assign" button; opens a modal listing all servants with live availability status and workload bar. Assigned servant is notified via Socket.IO + email
+- **Change department** — each ticket row has a Change Department (building icon) action; reassigns the ticket, resets it to Pending, and notifies the ticket owner
+- **SLA Breaches** — Active / Archived sub-tabs:
+  - **Active**: open tickets past SLA deadline; unassigned breach cards show an "Assign" button; Archive button moves to archived sub-tab
+  - **Archived**: CLOSED breach tickets; Restore button requires admin password confirmation before moving back to active
+  - Background scheduler (every 10 min) auto-notifies assigned servants and broadcasts to admin via Socket.IO; in-memory dedup prevents repeat alerts within a session
 - Archive/reactivate tickets (reactivation requires admin password)
 - Permanently delete tickets with cascade (messages, attachments, notifications)
 - Manage announcements (Info / Alert / Event categories, draft/published)
 - Real-time announcement broadcast via Socket.IO with popup notifications
 - Manage barangay directory (officials, emergency services, offices)
-- **Help & FAQs** — admin-specific help center covering ticket management, servant/citizen management, departments, announcements, and reports
+- **Help & FAQs** — admin-specific help center covering ticket management, servant/citizen management, departments, announcements, SLA breach workflow, and reports
 
 ### Reports (Admin)
 - Standalone analytics page accessible from the admin sidebar (`/reports`)
@@ -274,12 +280,47 @@ Citizens must upload or capture a valid government-issued ID during registration
 | Role | Channel | Persistence |
 |------|---------|-------------|
 | Citizen | Socket.IO + DB-backed | Yes — stored in Notification table, 50 most recent shown |
-| Servant | Socket.IO only | No — real-time only (ticket assignments, citizen replies) |
-| Admin | None | Excluded from all notifications |
+| Servant | Socket.IO only | No — ticket assignments, citizen replies, SLA breach alerts |
+| Admin | Socket.IO only | No — SLA breach broadcasts, servant status updates |
 
 - **Sound alerts** — two-tone ding on new notifications
 - **Announcement popups** — toast notification when admin publishes a new announcement
 - **Unread badge** — notification bell with count badge (citizens and servants only)
+- **Deep linking** — clicking a notification navigates directly to the relevant ticket
+
+---
+
+## Servant Availability — Dynamic Status
+
+| Trigger | Status Set To | How |
+|---------|--------------|-----|
+| Login (servant or unified) | AVAILABLE | `authController` writes status + emits `servant:statusUpdate` |
+| Open ticket count ≥ 5 | BUSY | `syncServantStatus()` after each workload increment |
+| Open ticket count drops below 5 | AVAILABLE | `syncServantStatus()` after each workload decrement |
+| Logout / navigate away | OFFLINE | `ServantDashboard` cleanup effect + `PATCH /servants/status` |
+| Manual override | Any | `PATCH /servants/status` (servant dashboard status selector) |
+
+Every status change emits `servant:statusUpdate` to the `admin` Socket.IO room so the admin's servant cards update in real-time without polling.
+
+---
+
+## Polling & Data Fetching
+
+All data fetching uses **TanStack Query 5** for caching, deduplication, and background refetch:
+
+| Component | Query Key | Strategy |
+|-----------|-----------|---------|
+| ClientDashboard | `['client-dashboard']` | On mount + `refetchOnWindowFocus` |
+| ServantDashboard | `['servant-dashboard', filter]` | On mount + on filter change + `refetchOnWindowFocus` |
+| AdminDashboard servants | `['admin-servants']` | Adaptive `refetchInterval` (120 s while tab active, paused when hidden) |
+| ReportsPage | `['admin-reports', range]` | On mount + on range change + `refetchOnWindowFocus` |
+
+**`useAdaptivePoll` hook** — used for operations that don't return queryable data (servant heartbeat):
+- Pauses automatically via the **Page Visibility API** when the tab is hidden
+- Resumes immediately (at base interval) when the tab becomes active
+- Backs off ×1.5 on each unchanged result (up to 5 min max) — resets on any change
+
+Socket.IO events update the TanStack Query cache directly (`queryClient.setQueryData`) instead of triggering refetches — e.g., `servant:statusUpdate` patches the `['admin-servants']` cache entry in-place.
 
 ---
 
@@ -317,8 +358,8 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 | POST | `/register` | — | Register with ID photo (multipart). Returns OTP — account not created until verified |
 | POST | `/verify-id` | — | Verify uploaded ID photo (multipart: image + name). Returns validity, ID type, name match |
 | POST | `/login` | — | Legacy resident login (email/phone + password) |
-| POST | `/servant/login` | — | Legacy servant login (email + password) |
-| POST | `/unified-login` | — | Single login: auto-detects user vs servant. Returns OTP for citizens, JWT for servants/admin |
+| POST | `/servant/login` | — | Legacy servant login (email + password). Sets status → AVAILABLE |
+| POST | `/unified-login` | — | Single login: auto-detects user vs servant. Sets servant status → AVAILABLE |
 | POST | `/otp/request` | — | Request SMS OTP for phone-based login |
 | POST | `/otp/verify` | — | Verify OTP and issue JWT |
 | POST | `/verify-auth-otp` | — | Verify 6-digit auth OTP after login/registration |
@@ -340,9 +381,9 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 | GET | `/:id` | JWT | Any | Ticket detail with messages, attachments, feedback |
 | POST | `/classify` | JWT | Any | AI-classify concern text → suggested department + confidence |
 | GET | `/servant/assigned` | JWT | SERVANT | List tickets assigned to logged-in servant |
-| PATCH | `/:id/status` | JWT | SERVANT | Update ticket status (PENDING → IN_PROGRESS → RESOLVED → CLOSED) |
-| PATCH | `/:id/assign` | JWT | SERVANT or ADMIN | Servant self-assigns; admin passes `servantId` in body. Notifies servant via socket + email |
-| PATCH | `/:id/department` | JWT | ADMIN | Change ticket department — clears servant assignment, resets to PENDING, notifies owner |
+| PATCH | `/:id/status` | JWT | SERVANT | Update ticket status; workload decrement on RESOLVED triggers `syncServantStatus` |
+| PATCH | `/:id/assign` | JWT | SERVANT or ADMIN | Servant self-assigns; admin passes `servantId` in body. Notifies servant via socket + email. Workload increment triggers `syncServantStatus` |
+| PATCH | `/:id/department` | JWT | ADMIN | Change ticket department — clears servant, resets to PENDING, notifies owner |
 | POST | `/:id/message` | JWT | Any | Send message with optional file attachments (multipart, up to 5 files) |
 | PATCH | `/:id/escalate` | JWT | SERVANT | Escalate ticket for higher-priority handling |
 | POST | `/:id/feedback` | JWT | CLIENT | Submit satisfaction rating (1-5 stars) + optional comment |
@@ -359,17 +400,17 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 | PATCH | `/users/:id/archive` | ADMIN | Toggle citizen archive status |
 | PATCH | `/users/:id/id-review` | ADMIN | Approve or reject citizen ID photo (`action: 'approve' \| 'reject'`) |
 | GET | `/reports` | ADMIN | Analytics: KPIs, servant performance, daily trend (query: `range=1\|7\|15\|30\|90\|365\|all`) |
-| GET | `/sla-breaches` | ADMIN | Open tickets past SLA deadline (ordered by oldest first) |
+| GET | `/sla-breaches` | ADMIN | Breach tickets — `?archived=true` returns CLOSED breaches; default returns open breaches ordered by oldest deadline |
 | DELETE | `/tickets/:id` | ADMIN | Permanently delete ticket + cascade |
-| PATCH | `/tickets/:id/archive` | ADMIN | Archive (→CLOSED) or reactivate (→PENDING) ticket. Reactivation requires admin password |
+| PATCH | `/tickets/:id/archive` | ADMIN | Archive (→CLOSED) or restore (→PENDING) ticket. Restore requires admin password in body |
 
 ### Servants (`/api/servants`) — 7 endpoints
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|:----:|-------------|
-| GET | `/stats` | SERVANT | My stats: total, pending, in-progress, resolved, urgent, avg rating |
-| PATCH | `/heartbeat` | SERVANT | Update `lastActiveAt` timestamp (called every ~120s by frontend) |
-| PATCH | `/status` | SERVANT | Update availability (AVAILABLE / BUSY / OFFLINE) |
+| GET | `/stats` | SERVANT | My stats: total, pending, in-progress, resolved, urgent, avg rating, current status |
+| PATCH | `/heartbeat` | SERVANT | Update `lastActiveAt` timestamp. Called every 60 s; paused automatically when tab is hidden |
+| PATCH | `/status` | SERVANT | Update availability (AVAILABLE / BUSY / OFFLINE). Emits `servant:statusUpdate` to admin room |
 | GET | `/` | ADMIN | All servants with department, ticket count, `avgRating`, `totalRatings` (sorted A-Z) |
 | POST | `/` | ADMIN | Create servant (multipart: avatar optional) |
 | PUT | `/:id` | ADMIN | Update servant (multipart: avatar optional, old avatar deleted on replace) |
@@ -432,7 +473,7 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 ### Sidebar Layout (Authenticated)
 - Collapsible left sidebar on desktop (expanded 256px / collapsed 72px)
 - Mobile: hamburger-triggered slide-in drawer with swipe-to-close gesture
-- Role-aware navigation links, notification bell with unread badge (citizens + servants only)
+- Role-aware navigation links, notification bell with unread badge (citizens and servants only)
 - Language selector, profile section with avatar and status indicator
 
 ### Admin Sidebar Links
@@ -440,7 +481,7 @@ Angilan, Bojo, Bonbon, Esperanza, Kandingan, Kantabogon, Kawasan, Olango, Poblac
 | Link | Route | Description |
 |------|-------|-------------|
 | Admin Panel | `/admin` | Overview, Tickets, SLA Breaches (inline tabs) |
-| Servants | `/admin?tab=servants` | Servant management |
+| Servants | `/admin?tab=servants` | Servant management with live status cards |
 | Citizens | `/admin?tab=citizens` | Citizen management + ID review |
 | Departments | `/admin?tab=departments` | Department management |
 | Announcements | `/announcements` | Announcement management |
@@ -460,15 +501,15 @@ egov/
 │   │   └── migrations/               # Prisma migration history
 │   │
 │   ├── src/
-│   │   ├── index.js                   # Express app bootstrap, route mounting, middleware, SLA scheduler
+│   │   ├── index.js                   # Express bootstrap, route mounting, middleware, SLA scheduler, panic recovery handlers
 │   │   ├── controllers/
-│   │   │   ├── authController.js      # Register, login, OTP, Firebase, password validation, ID status
-│   │   │   └── ticketController.js    # Ticket CRUD, messaging, AI classification, file attachments
+│   │   │   ├── authController.js      # Register, login (sets AVAILABLE on servant login), OTP, Firebase, password, ID status
+│   │   │   └── ticketController.js    # Ticket CRUD, messaging, syncServantStatus, AI classification, file attachments
 │   │   ├── routes/
 │   │   │   ├── auth.js                # 16 endpoints — registration, login, OTP, password reset, ID reupload, profile
 │   │   │   ├── tickets.js             # 11 endpoints — submit, list, chat, assign (servant+admin), change dept, escalate, feedback
-│   │   │   ├── admin.js               # 11 endpoints — stats, users, reports, SLA, archive, ID review
-│   │   │   ├── servants.js            # 7 endpoints — stats, heartbeat, status, CRUD (GET includes avgRating)
+│   │   │   ├── admin.js               # 11 endpoints — stats, users, reports, SLA (active+archived), archive, ID review
+│   │   │   ├── servants.js            # 7 endpoints — stats, heartbeat, status (emits servant:statusUpdate), CRUD (GET includes avgRating)
 │   │   │   ├── announcements.js       # 6 endpoints — public list, admin CRUD, Socket.IO broadcast
 │   │   │   ├── departments.js         # 4 endpoints — public list, admin CRUD
 │   │   │   ├── directory.js           # 5 endpoints — public list, admin CRUD
@@ -476,13 +517,13 @@ egov/
 │   │   ├── middleware/
 │   │   │   ├── auth.js                # JWT verification + role guards
 │   │   │   ├── upload.js              # Multer: avatarUpload, idUpload, upload (attachments)
-│   │   │   └── errorHandler.js        # Global error handler
+│   │   │   └── errorHandler.js        # Global error handler + Prisma panic recovery (503 + process.exit)
 │   │   ├── services/
 │   │   │   ├── classifier.js          # Claude Haiku 4.5 department classifier + keyword fallback
 │   │   │   ├── idVerifier.js          # ID photo verification service
 │   │   │   └── notification.js        # Email, in-app notification generation, servant socket notifications
 │   │   └── lib/
-│   │       ├── prisma.js              # Singleton Prisma Client (pool: 3 connections)
+│   │       ├── prisma.js              # Singleton Prisma Client (pool: 1, socket_timeout: 30 s)
 │   │       ├── socket.js              # Socket.IO init + event handlers
 │   │       └── firebase.js            # Firebase token verifier via REST (no firebase-admin)
 │   │
@@ -503,22 +544,25 @@ egov/
 │   │   └── favicon.svg                # App icon
 │   │
 │   ├── src/
-│   │   ├── main.jsx                   # React entry point
+│   │   ├── main.jsx                   # React entry point + TanStack QueryClientProvider (staleTime 60 s, refetchOnWindowFocus)
 │   │   ├── App.jsx                    # Root router — route guards, lazy loading, Suspense
 │   │   ├── index.css                  # Global styles: Tailwind, touch targets, safe-area
+│   │   │
+│   │   ├── hooks/
+│   │   │   └── useAdaptivePoll.js     # Adaptive polling: Page Visibility pause/resume + exponential backoff (×1.5) on unchanged data
 │   │   │
 │   │   ├── pages/                     # 12 page components
 │   │   │   ├── LandingPage.jsx        # Public: hero, features, departments, CTA
 │   │   │   ├── AuthPage.jsx           # Login, register (OCR ID verify + camera + password strength + phone-only option), forgot password, ID reupload
-│   │   │   ├── ClientDashboard.jsx    # Citizen: ticket overview, quick submit
+│   │   │   ├── ClientDashboard.jsx    # Citizen: ticket overview (useQuery), quick submit
 │   │   │   ├── SubmitConcern.jsx      # 2-step: text/voice/category → AI routing + file upload
-│   │   │   ├── TrackTicket.jsx        # Ticket detail: status timeline, real-time chat, feedback
-│   │   │   ├── ServantDashboard.jsx   # Servant: assigned tickets, actions, stats
-│   │   │   ├── AdminDashboard.jsx     # Admin: inline tabs (overview/tickets/sla) + sidebar tabs (servants/citizens/departments); assign servant modal; change dept modal; servant star ratings
-│   │   │   ├── ReportsPage.jsx        # Analytics: period selector, KPIs, charts, CSV/PDF export
+│   │   │   ├── TrackTicket.jsx        # Ticket detail: status timeline, real-time chat, feedback, socket cleanup
+│   │   │   ├── ServantDashboard.jsx   # Servant: tickets+stats (useQuery), adaptive heartbeat (useAdaptivePoll), real-time socket
+│   │   │   ├── AdminDashboard.jsx     # Admin: inline tabs (overview/tickets/sla active+archived) + sidebar tabs; servants via useQuery + socket cache patch; assign/change-dept modals; live status cards
+│   │   │   ├── ReportsPage.jsx        # Analytics: useQuery with range as key, refetch on window focus, manual refresh
 │   │   │   ├── AnnouncementsPage.jsx  # Public announcements with category filter
 │   │   │   ├── DirectoryPage.jsx      # Official directory with category filter
-│   │   │   ├── FaqPage.jsx            # Role-aware help center: citizen FAQ (5 sections) / servant FAQ (5 sections) / admin FAQ (6 sections)
+│   │   │   ├── FaqPage.jsx            # Role-aware help center: citizen / servant / admin (6 sections each)
 │   │   │   └── TermsPage.jsx          # Terms and conditions
 │   │   │
 │   │   ├── components/                # 5 reusable components
@@ -547,7 +591,7 @@ egov/
 │   ├── tailwind.config.js             # Custom breakpoints (xs: 480px), primary/accent/gov colours
 │   ├── postcss.config.js              # PostCSS: Tailwind + Autoprefixer
 │   ├── .env                           # Firebase config (not in git)
-│   └── package.json                   # 20 dependencies (includes tesseract.js)
+│   └── package.json                   # 21 dependencies (includes @tanstack/react-query)
 │
 ├── sql/                               # Manual DB setup (for phpMyAdmin)
 │   ├── 01-schema.sql                  # Full schema + indexes + department seed
@@ -592,9 +636,13 @@ Tuned for Hostinger Business shared hosting (40 entry process limit):
 | HTTP `requestTimeout` | 25 s | Hanging requests terminated, freeing process slots |
 | Socket.IO `upgradeTimeout` | 5 s | Polling connections upgrade to WebSocket within 5 s |
 | Socket.IO `pingInterval` | 60 s | Halved ping frequency vs default 25 s |
-| Prisma connection pool | 3 | Reduced DB connections held open concurrently |
-| Servant heartbeat | 120 s | ~5–6 req/min from all servants vs ~11 req/min |
-| Admin servant poll | 120 s | 4× fewer HTTP hits when admin views Servants tab |
+| Prisma connection pool | 1 | Minimal DB connections; in-engine pooling handles concurrency |
+| Prisma `socket_timeout` | 30 s | Prevents Rust timer hang on shared hosting ("PANIC: timer has gone away") |
+| Prisma panic recovery | `process.exit(1)` on `PrismaClientRustPanicError` | PM2 auto-restarts; 503 sent to client before exit |
+| Servant heartbeat | 60 s, paused when tab hidden | Page Visibility API via `useAdaptivePoll`; zero heartbeats when browser tab is inactive |
+| Admin servant poll | Adaptive 120 s → 5 min backoff | TanStack Query `refetchInterval`; pauses when tab hidden, resets on data change |
+| TanStack Query | staleTime 60 s, refetchOnWindowFocus | Eliminates redundant fetches on tab switch; background revalidation on tab focus |
+| `useAdaptivePoll` backoff | ×1.5 per unchanged result | Slow polling during quiet periods; auto-resets to base interval when data changes |
 | Gzip compression | all responses | 60–80% payload reduction |
 | Route code splitting | lazy-loaded pages | Small initial JS bundle |
 | Batch DB queries | admin stats/reports | 2 queries for 365-day trend instead of 730 |
@@ -602,6 +650,7 @@ Tuned for Hostinger Business shared hosting (40 entry process limit):
 | Client-side OCR | Tesseract.js | No server round-trip for ID verification |
 | SLA scheduler | `setInterval` 10 min | Single deduped loop vs per-request checks; in-memory Set avoids repeat notifications |
 | avgRating aggregation | 2 DB queries (servant list) | Batch feedback fetch + JS aggregation instead of N+1 per-servant queries |
+| Dynamic servant status | `syncServantStatus()` | Workload threshold auto-sets BUSY/AVAILABLE; socket broadcast replaces full servant-list refetch |
 
 ---
 
@@ -620,6 +669,7 @@ Tuned for Hostinger Business shared hosting (40 entry process limit):
 - CORS with origin whitelist
 - File upload validation (type + size limits, max 5 per message)
 - Role-based access control (CLIENT / SERVANT / ADMIN)
+- Admin password required to restore archived tickets (both regular and SLA breach tabs)
 
 ---
 
