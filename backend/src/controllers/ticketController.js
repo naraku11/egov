@@ -445,7 +445,8 @@ export const updateTicketStatus = async (req, res, next) => {
 export const addMessage = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { message, isInternal = false } = req.body;
+    const { message } = req.body;
+    const isInternal = req.body.isInternal === true || req.body.isInternal === 'true';
 
     // Build attachments array from uploaded files
     const files = req.files || [];
