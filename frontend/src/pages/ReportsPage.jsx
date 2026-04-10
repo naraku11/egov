@@ -23,7 +23,8 @@
  * re-mounting the page.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   FileText, CheckCircle, AlertTriangle, Star, Users,
   Clock, Download, RefreshCw, BarChart2, TrendingUp, Building2,
@@ -106,53 +107,43 @@ function StatCard({ label, value, sub, icon: Icon, colorClass }) {
  * @returns {JSX.Element} The full-page reports and analytics dashboard.
  */
 export default function ReportsPage() {
-  // Raw API response from /admin/reports
-  const [report, setReport]     = useState(null);
-  // Raw list of servant records from /servants (for live availability status)
-  const [servants, setServants] = useState([]);
-
-  // Loading flags
-  const [loading, setLoading]   = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
   // Currently selected date range in days
-  const [range, setRange]       = useState(15);
+  const [range, setRange] = useState(15);
   // True while PDF export is generating
   const [exporting, setExporting] = useState(false);
   // Ref for the printable report area
   const reportRef = useRef(null);
-  // Timestamp of the most recent successful data fetch
-  const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
   /**
-   * Fetches both report analytics and servant list concurrently.
-   * Uses `initial` flag to differentiate between the first load (full spinner)
-   * and subsequent refreshes (inline spinning icon only).
-   *
-   * @param {boolean} [initial=false] - True on mount; false for manual refresh or range change.
+   * Report data + servant list — managed by TanStack Query.
+   * - Re-fetches automatically when `range` changes (queryKey includes it).
+   * - refetchOnWindowFocus: refreshes when the admin returns to the tab.
+   * - staleTime 2 min: report data is relatively slow-changing.
+   * - `isFetching` drives the inline refresh spinner; `isLoading` the full-page one.
    */
-  const fetchData = async (initial = false) => {
-    if (initial) setLoading(true); else setRefreshing(true);
-    try {
+  const {
+    data,
+    isLoading:  loading,
+    isFetching: refreshing,
+    refetch,
+    dataUpdatedAt,
+  } = useQuery({
+    queryKey: ['admin-reports', range],
+    queryFn: async () => {
       const [rr, sr] = await Promise.all([
         api.get(`/admin/reports?range=${range}`),
         api.get('/servants'),
       ]);
-      setReport(rr.data);
-      setServants(sr.data || []);
-      setLastRefreshed(new Date());
-    } catch {
-      toast.error('Failed to load report data');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+      return { report: rr.data, servants: sr.data || [] };
+    },
+    staleTime:            2 * 60_000,
+    refetchOnWindowFocus: true,
+    onError: () => toast.error('Failed to load report data'),
+  });
 
-  // Initial data load on mount
-  useEffect(() => { fetchData(true); }, []);
-  // Re-fetch (non-initial) whenever the selected range changes
-  useEffect(() => { if (report) fetchData(false); }, [range]);
+  const report   = data?.report   ?? null;
+  const servants = data?.servants ?? [];
+  const lastRefreshed = dataUpdatedAt ? new Date(dataUpdatedAt) : new Date();
 
   /**
    * Serialises all report data and the servant performance table into a CSV
@@ -401,7 +392,7 @@ export default function ReportsPage() {
             </div>
             {/* Manual refresh button */}
             <button
-              onClick={() => fetchData(false)}
+              onClick={() => refetch()}
               disabled={refreshing}
               className="btn-secondary flex items-center gap-2 text-sm disabled:opacity-60"
             >

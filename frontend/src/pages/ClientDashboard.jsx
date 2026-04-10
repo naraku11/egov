@@ -16,7 +16,8 @@
  *  - Right (1/3): quick-action links + notifications panel.
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { FileText, Clock, CheckCircle, AlertTriangle, Bell, ArrowRight, Star } from 'lucide-react';
 import { format } from 'date-fns';
@@ -41,39 +42,30 @@ export default function ClientDashboard() {
   const { user } = useAuth();
   const { t } = useLanguage();
 
-  // ── State ───────────────────────────────────────────────────────────────────
-  /** The five most recently submitted tickets belonging to this resident */
-  const [tickets, setTickets] = useState([]);
-
-  /** All notifications for this resident (read + unread) */
-  const [notifications, setNotifications] = useState([]);
-
-  /** True while the initial parallel API calls are in flight */
-  const [loading, setLoading] = useState(true);
-
-  // ── Data Loading ────────────────────────────────────────────────────────────
+  // ── Data Loading (TanStack Query) ───────────────────────────────────────────
   /**
-   * Fetch tickets and notifications simultaneously on first render.
-   * The empty dependency array ensures this only runs once after mount.
+   * Fetch tickets + notifications in parallel.
+   * - staleTime 60 s: navigating away and back won't trigger an extra round-trip.
+   * - refetchOnWindowFocus: refreshes automatically when the user returns to the tab.
    */
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        // Both requests are made at the same time to minimise perceived load time
-        const [ticketRes, notifRes] = await Promise.all([
-          api.get('/tickets?limit=5'),
-          api.get('/notifications'),
-        ]);
-        setTickets(ticketRes.data.tickets || []);
-        setNotifications(notifRes.data || []);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, []);
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ['client-dashboard'],
+    queryFn: async () => {
+      const [ticketRes, notifRes] = await Promise.all([
+        api.get('/tickets?limit=5'),
+        api.get('/notifications'),
+      ]);
+      return {
+        tickets:       ticketRes.data.tickets || [],
+        notifications: notifRes.data || [],
+      };
+    },
+    staleTime:            60_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const tickets       = data?.tickets       ?? [];
+  const notifications = data?.notifications ?? [];
 
   // ── Derived Statistics ──────────────────────────────────────────────────────
   /**

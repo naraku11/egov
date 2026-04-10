@@ -24,7 +24,8 @@
  *  - DeleteConfirmModal  — Confirmation dialog before removing a servant.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
   Users, FileText, CheckCircle, AlertTriangle, Star, TrendingUp,
@@ -626,6 +627,7 @@ export default function AdminDashboard() {
   // Logged-in admin user (used for the greeting)
   const { user } = useAuth();
   const socket = useSocket();
+  const queryClient = useQueryClient();
 
   // ── Tab state (synced with URL ?tab= param for sidebar navigation) ─────────
   const [searchParams, setSearchParams] = useSearchParams();
@@ -644,8 +646,23 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   /** Full ticket list used in the Tickets tab (up to 50 items) */
   const [tickets, setTickets] = useState([]);
-  /** All public servants — loaded when the Servants tab is first opened */
-  const [servants, setServants] = useState([]);
+  /**
+   * Servants list — managed by TanStack Query.
+   * Polls every 2 min when the servants tab is active, pauses when the tab is
+   * hidden (refetchOnWindowFocus handles the resume).
+   */
+  const { data: _servantsData } = useQuery({
+    queryKey: ['admin-servants'],
+    queryFn: async () => {
+      const { data } = await api.get('/servants');
+      return data || [];
+    },
+    staleTime:            60_000,
+    refetchOnWindowFocus: true,
+    refetchInterval:      (q) =>
+      !document.hidden && tab === 'servants' && !q.state.error ? 120_000 : false,
+  });
+  const servants = _servantsData ?? [];
   /** Tickets whose SLA deadline has passed — loaded when the SLA tab is opened */
   const [slaBreaches, setSlaBreaches] = useState([]);
   /** Archived SLA breach tickets (status CLOSED) — loaded alongside active breaches */
@@ -735,8 +752,7 @@ export default function AdminDashboard() {
   /** Status filter value; 'ALL' means no status filter is applied */
   const [ticketStatusFilter, setTicketStatusFilter] = useState('ALL');
 
-  /** Interval ref for the 120-second servant list auto-poll */
-  const servantPollRef = useRef(null);
+  // servantPollRef removed — servant polling now handled by TanStack Query
 
   // ── Effects ─────────────────────────────────────────────────────────────────
 
@@ -757,20 +773,7 @@ export default function AdminDashboard() {
     }
   }, [tab]);
 
-  /**
-   * Servants tab polling effect.
-   * Starts a 30-second interval that re-fetches the servant list whenever the
-   * Servants tab is active (so presence / workload data stays fresh), and
-   * clears the interval when the user navigates away from that tab.
-   */
-  useEffect(() => {
-    if (tab === 'servants') {
-      servantPollRef.current = setInterval(() => fetchTabData('servants'), 120000);
-    } else {
-      clearInterval(servantPollRef.current);
-    }
-    return () => clearInterval(servantPollRef.current);
-  }, [tab]);
+  // Servants tab polling is now handled by the useQuery above (adaptive refetchInterval).
 
   /**
    * Real-time servant status effect.
@@ -780,11 +783,16 @@ export default function AdminDashboard() {
    */
   useEffect(() => {
     const onStatusUpdate = ({ servantId, status }) => {
-      setServants(prev => prev.map(s => s.id === servantId ? { ...s, status } : s));
+      // Update the query cache directly — no full refetch needed
+      queryClient.setQueryData(['admin-servants'], (prev) =>
+        Array.isArray(prev)
+          ? prev.map(s => s.id === servantId ? { ...s, status } : s)
+          : prev,
+      );
     };
     socket.on('servant:statusUpdate', onStatusUpdate);
     return () => socket.off('servant:statusUpdate', onStatusUpdate);
-  }, [socket]);
+  }, [socket, queryClient]);
 
   // ── Data fetching helpers ───────────────────────────────────────────────────
 
@@ -802,8 +810,8 @@ export default function AdminDashboard() {
         setTickets(all.filter(t => t.status !== 'CLOSED'));
         setArchivedTickets(all.filter(t => t.status === 'CLOSED'));
       } else if (targetTab === 'servants') {
-        const { data } = await api.get('/servants');
-        setServants(data || []);
+        // Invalidate TanStack Query cache — it will refetch automatically
+        queryClient.invalidateQueries({ queryKey: ['admin-servants'] });
       } else if (targetTab === 'citizens') {
         const { data } = await api.get('/admin/users');
         setCitizens(data || []);
@@ -875,7 +883,7 @@ export default function AdminDashboard() {
       await api.delete(`/servants/${deletingServant.id}`);
       toast.success(`${deletingServant.name} removed`);
       setDeletingServant(null);
-      loadTabData('servants');
+      queryClient.invalidateQueries({ queryKey: ['admin-servants'] });
     } catch (err) {
       toast.error(err.response?.data?.error || err.message);
     } finally {
@@ -939,10 +947,11 @@ export default function AdminDashboard() {
   // Ensure servants list is loaded before opening the assign modal
   const openAssignModal = async (ticket) => {
     if (servants.length === 0) {
-      try {
-        const { data } = await api.get('/servants');
-        setServants(data || []);
-      } catch {}
+      // Trigger a fetch into the query cache if not loaded yet
+      await queryClient.prefetchQuery({
+        queryKey: ['admin-servants'],
+        queryFn: async () => { const { data } = await api.get('/servants'); return data || []; },
+      });
     }
     setAssigningTicket(ticket);
     setAssignServantId('');
@@ -2222,7 +2231,7 @@ export default function AdminDashboard() {
           servant={servantModal === 'add' ? null : servantModal}
           departments={departments}
           onClose={() => setServantModal(null)}
-          onSaved={() => loadTabData('servants')}
+          onSaved={() => queryClient.invalidateQueries({ queryKey: ['admin-servants'] })}
         />
       )}
 

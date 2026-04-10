@@ -10,9 +10,33 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { Toaster } from 'react-hot-toast';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import './index.css'; // Tailwind base styles and global CSS resets
+
+/**
+ * Global TanStack Query client.
+ *
+ * defaults:
+ *  - staleTime 60 s   — data is "fresh" for a minute; no refetch on every mount.
+ *  - gcTime 5 min     — keep unused cache entries for 5 minutes.
+ *  - refetchOnWindowFocus true  — refetch when the user returns to the tab
+ *                                 (covers the Page Visibility requirement).
+ *  - refetchOnReconnect true    — refetch when the browser comes back online.
+ *  - retry 1          — one automatic retry on transient errors.
+ */
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime:           60_000,
+      gcTime:              5 * 60_000,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect:   true,
+      retry:               1,
+    },
+  },
+});
 
 // Signal to the HTML fallback timer that the JS bundle loaded successfully
 window.__egov_loaded = true;
@@ -22,6 +46,7 @@ window.__egov_loaded = true;
 // effects, deprecated API detection, etc.) without affecting the production build.
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
+    <QueryClientProvider client={queryClient}>
     <ErrorBoundary>
     <App />
 
@@ -40,5 +65,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       }}
     />
     </ErrorBoundary>
+    </QueryClientProvider>
   </React.StrictMode>
 );

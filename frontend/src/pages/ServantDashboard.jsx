@@ -32,7 +32,9 @@
  *  - Change their own availability status (AVAILABLE / BUSY / OFFLINE)
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAdaptivePoll } from '../hooks/useAdaptivePoll.js';
 import { CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, Send, ArrowUpCircle, X, Paperclip, FileText, Image as ImageIcon, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -66,23 +68,51 @@ const STATUS_ACTIONS = [
 export default function ServantDashboard() {
   // Servant profile from auth context; updateServant syncs changes back to localStorage
   const { servant, updateServant } = useAuth();
+  const queryClient = useQueryClient();
   const { t } = useLanguage();
   // Socket instance from context — used to join/leave ticket rooms and listen for events
   const socket = useSocket();
 
   // ── State ───────────────────────────────────────────────────────────────────
 
-  /** Assigned tickets for the servant (filtered by `filter` when non-empty) */
+  /**
+   * Assigned tickets + servant stats — fetched with TanStack Query.
+   * Automatically refetches on window focus and when the filter changes.
+   * staleTime 30 s keeps the list fresh without hammering the server.
+   */
+  const { data: _dashData, isLoading: loading } = useQuery({
+    queryKey: ['servant-dashboard', filter],
+    queryFn: async () => {
+      const params = filter ? `?status=${filter}` : '';
+      const [ticketsRes, statsRes] = await Promise.all([
+        api.get(`/tickets/servant/assigned${params}`),
+        api.get('/servants/stats'),
+      ]);
+      return {
+        tickets: ticketsRes.data.tickets || [],
+        stats:   statsRes.data || {},
+      };
+    },
+    staleTime:            30_000,
+    refetchOnWindowFocus: true,
+  });
+
+  /** Tickets list derived from query (writable local copy for socket patches) */
   const [tickets, setTickets] = useState([]);
+  /** Stats derived from query */
+  const [stats, setStats] = useState({});
+
+  // Sync query data → local state so socket handlers can patch it
+  useEffect(() => {
+    if (_dashData) {
+      setTickets(_dashData.tickets);
+      setStats(_dashData.stats);
+      if (_dashData.stats?.status) setServantStatus(_dashData.stats.status);
+    }
+  }, [_dashData]);
 
   /** Full ticket object currently open in the detail panel; null when none selected */
   const [selected, setSelected] = useState(null);
-
-  /** Servant-level performance stats returned by GET /servants/stats */
-  const [stats, setStats] = useState({});
-
-  /** True while the initial data load is in progress */
-  const [loading, setLoading] = useState(true);
 
   /** Status filter applied to the ticket list; empty string = show all */
   const [filter, setFilter] = useState('');
@@ -117,32 +147,24 @@ export default function ServantDashboard() {
   /** DOM ref used to auto-scroll to the latest message in the conversation */
   const messagesEndRef = useRef(null);
 
-  /** setInterval ID for the 120-second heartbeat, cleared on unmount */
-  const heartbeatRef   = useRef(null);
+  // heartbeatRef removed — heartbeat is now managed by useAdaptivePoll
 
   // ── Effects ─────────────────────────────────────────────────────────────────
 
-  /**
-   * Reload tickets and stats whenever the status filter changes.
-   * Also runs once on initial mount (empty filter = all tickets).
-   */
-  useEffect(() => { loadData(); }, [filter]);
+  // Data loading is now handled by useQuery above (re-runs when `filter` changes).
 
   /**
-   * Heartbeat effect.
-   * Sends an immediate ping on mount, then repeats every 120 seconds.
-   * On unmount (navigate away or tab close) the status is set to OFFLINE.
+   * Heartbeat — sends PATCH /servants/heartbeat on a smart schedule:
+   *  - Pauses automatically when the tab is hidden (Page Visibility API).
+   *  - Resumes immediately when the tab becomes visible again.
+   *  - No adaptive backoff (heartbeat is not data — it must stay regular).
+   * On unmount the status is set to OFFLINE.
    */
-  useEffect(() => {
-    const sendHeartbeat = () => api.patch('/servants/heartbeat').catch(() => {});
-    sendHeartbeat(); // immediate ping so presence is visible right away
-    heartbeatRef.current = setInterval(sendHeartbeat, 120000);
-    return () => {
-      clearInterval(heartbeatRef.current);
-      // Mark servant offline when they leave the dashboard (navigate away or close tab)
-      api.patch('/servants/status', { status: 'OFFLINE' }).catch(() => {});
-    };
-  }, []);
+  useAdaptivePoll(
+    useCallback(() => api.patch('/servants/heartbeat').catch(() => {}), []),
+    { minInterval: 60_000, maxInterval: 60_000 }, // fixed 60 s, just pause when hidden
+  );
+  useEffect(() => () => { api.patch('/servants/status', { status: 'OFFLINE' }).catch(() => {}); }, []);
 
   /**
    * Auto-scroll effect.
@@ -198,15 +220,15 @@ export default function ServantDashboard() {
   }, [selected?.id]);
 
   /**
-   * New-assignment socket effect.
-   * Listens for `ticket:assigned` at the servant level (not room-scoped) so
-   * newly routed tickets appear in the list immediately without a page refresh.
+   * New-assignment socket effect — invalidates the query cache so the list
+   * refreshes immediately when the server assigns a new ticket to this servant.
    */
   useEffect(() => {
-    const onAssigned = () => loadData();
+    const onAssigned = () =>
+      queryClient.invalidateQueries({ queryKey: ['servant-dashboard'] });
     socket.on('ticket:assigned', onAssigned);
     return () => socket.off('ticket:assigned', onAssigned);
-  }, []);
+  }, [socket, queryClient]);
 
   // ── Data fetching helpers ───────────────────────────────────────────────────
 
@@ -215,23 +237,7 @@ export default function ServantDashboard() {
    * in parallel. Also syncs the local servantStatus from the DB response so it
    * cannot drift from the actual value.
    */
-  const loadData = async () => {
-    try {
-      const params = filter ? `?status=${filter}` : '';
-      const [ticketsRes, statsRes] = await Promise.all([
-        api.get(`/tickets/servant/assigned${params}`),
-        api.get('/servants/stats'),
-      ]);
-      setTickets(ticketsRes.data.tickets || []);
-      setStats(statsRes.data || {});
-      // Always sync status from DB (overrides stale localStorage value)
-      if (statsRes.data?.status) setServantStatus(statsRes.data.status);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // loadData replaced by useQuery — see top of component state section.
 
   /**
    * Fetches a single ticket's full detail (including messages and attachments)
