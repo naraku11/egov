@@ -46,12 +46,11 @@ export const initSocket = (httpServer) => {
       origin: process.env.CLIENT_URL || 'http://localhost:3000',
       credentials: true,
     },
-    // Prefer WebSocket; keep polling as fallback but upgrade ASAP.
-    transports: ['websocket', 'polling'],
-    // Force the client to upgrade to WebSocket within 5 s.
-    // A shorter upgrade window means polling connections (which occupy an entry
-    // process slot on Hostinger) are released quickly.
-    upgradeTimeout: 5_000,
+    // WebSocket-only transport — each Socket.IO polling request creates a new
+    // HTTP connection that consumes an entry-process slot on Hostinger.
+    // With websocket-only the client opens one persistent connection and holds
+    // exactly one slot for its entire session instead of one slot per poll tick.
+    transports: ['websocket'],
     // Ping every 60 s (default 25 s) — fewer keep-alive round-trips per minute.
     pingInterval: 60_000,
     // Treat a client as disconnected if no pong arrives within 20 s.

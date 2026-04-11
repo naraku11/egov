@@ -304,17 +304,21 @@ process.on('unhandledRejection', (reason) => {
 
 httpServer.listen(PORT, () => {
   // On Hostinger shared hosting every open HTTP connection counts as an "entry
-  // process". Tightening these timeouts ensures idle keep-alive connections are
-  // closed quickly so the 40-process slot limit is not exhausted.
+  // process". The plan limit is 40 — all settings below are tuned to keep the
+  // active connection count well under that ceiling.
   //
-  // keepAliveTimeout (20 s) — close idle persistent connections well below the
-  //   host's reverse-proxy idle timeout (~60 s), freeing entry process slots fast.
-  // headersTimeout (25 s) — must be slightly above keepAliveTimeout to prevent
-  //   a Node.js bug where the connection closes before headers are fully sent.
+  // maxConnections (35) — hard-cap concurrent TCP connections at 35, leaving a
+  //   5-slot safety margin below the 40-process limit. New connections above
+  //   this number are queued by the OS and admitted as slots free up.
+  // keepAliveTimeout (5 s) — close idle persistent connections quickly so slots
+  //   are freed well before the host's reverse-proxy idle timeout (~60 s).
+  // headersTimeout (10 s) — must be strictly above keepAliveTimeout to prevent
+  //   a Node.js race where the socket closes before headers are fully sent.
   // requestTimeout (25 s) — abort any request that takes more than 25 seconds
-  //   end-to-end (AI classify + DB heavy queries should still finish in time).
-  httpServer.keepAliveTimeout = 20_000;
-  httpServer.headersTimeout   = 25_000;
+  //   end-to-end (DB heavy queries and file uploads should finish in time).
+  httpServer.maxConnections   = 35;
+  httpServer.keepAliveTimeout = 5_000;
+  httpServer.headersTimeout   = 10_000;
   httpServer.requestTimeout   = 25_000;
 
   console.log(`\n🏛️  E-Gov Aloguinsan API running on port ${PORT}`);

@@ -12,10 +12,13 @@
  *     SocketContext.jsx, which ties the socket to the user's authentication
  *     state.  This prevents unauthenticated WebSocket connections.
  *
- *   transports: ['websocket', 'polling']
- *     Prefer the native WebSocket transport for lower latency.  Fall back to
- *     HTTP long-polling if WebSocket is unavailable (e.g. some corporate
- *     proxies or load-balancers that strip Upgrade headers).
+ *   transports: ['websocket']
+ *     WebSocket-only — no HTTP long-polling fallback.  On Hostinger shared
+ *     hosting each HTTP connection (including polling requests) consumes an
+ *     entry-process slot.  Using a single persistent WebSocket connection
+ *     keeps the process count under the plan's 40-slot ceiling.  The server
+ *     is likewise configured with transports: ['websocket'] so both sides
+ *     are aligned.
  *
  * Deployment note:
  *   In production the Express server serves the compiled frontend, so the
@@ -29,8 +32,8 @@ import { io } from 'socket.io-client';
 // In production, the socket connects to the same origin (Express serves frontend).
 // In development, Vite proxies /socket.io to localhost:5000.
 const socket = io({
-  autoConnect: false,                          // controlled manually by SocketContext
-  transports: ['websocket', 'polling'],        // WebSocket first, polling as fallback
+  autoConnect:  false,               // controlled manually by SocketContext
+  transports:   ['websocket'],       // WebSocket only — no polling (Hostinger slot limit)
 });
 
 export default socket;
