@@ -75,6 +75,9 @@ export default function ServantDashboard() {
 
   // ── State ───────────────────────────────────────────────────────────────────
 
+  /** Status filter applied to the ticket list; empty string = show all */
+  const [filter, setFilter] = useState('');
+
   /**
    * Assigned tickets + servant stats — fetched with TanStack Query.
    * Automatically refetches on window focus and when the filter changes.
@@ -113,9 +116,6 @@ export default function ServantDashboard() {
 
   /** Full ticket object currently open in the detail panel; null when none selected */
   const [selected, setSelected] = useState(null);
-
-  /** Status filter applied to the ticket list; empty string = show all */
-  const [filter, setFilter] = useState('');
 
   /** Current value of the message / internal-note input */
   const [message, setMessage] = useState('');

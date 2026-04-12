@@ -44,6 +44,7 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import { useSocket } from '../contexts/SocketContext.jsx';
 import SidebarLayout from '../components/SidebarLayout.jsx';
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx';
+import { barangays } from '../i18n/translations.js';
 
 /**
  * ServantModal component.
@@ -407,7 +408,10 @@ function CitizenModal({ citizen, onClose, onSaved }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Barangay *</label>
-              <input className="input-field" value={form.barangay} onChange={e => setForm(f => ({ ...f, barangay: e.target.value }))} required />
+              <select className="input-field" value={form.barangay} onChange={e => setForm(f => ({ ...f, barangay: e.target.value }))} required>
+                <option value="">Select barangay</option>
+                {barangays.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
