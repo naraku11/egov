@@ -155,6 +155,11 @@ app.get('/health', async (req, res) => {
     await prisma.$queryRaw`SELECT 1`;
     health.checks.database = { status: 'ok' };
   } catch (err) {
+    // PrismaClientRustPanicError is non-recoverable — let PM2 restart cleanly
+    if (err?.name === 'PrismaClientRustPanicError' || err?.message?.includes('PANIC')) {
+      console.error('Prisma panic in health check, restarting:', err.message);
+      process.exit(1);
+    }
     health.checks.database = { status: 'error', message: err.message };
     health.status = 'degraded';
   }
@@ -302,6 +307,19 @@ process.on('unhandledRejection', (reason) => {
 
 // ── Start server ──────────────────────────────────────────────────────────────
 
+// Wrap startup in an async IIFE so we can await prisma.$connect() before the
+// server begins accepting requests.  This eliminates the "library already
+// starting" race condition that occurs when two concurrent callers both try to
+// initialise the Prisma Rust engine at the same time on first request.
+(async () => {
+  try {
+    await prisma.$connect();
+    console.log('✅ Database connected');
+  } catch (err) {
+    console.error('❌ Database connection failed at startup — exiting:', err.message);
+    process.exit(1);
+  }
+
 httpServer.listen(PORT, () => {
   // On Hostinger shared hosting every open HTTP connection counts as an "entry
   // process". The plan limit is 40 — all settings below are tuned to keep the
@@ -324,6 +342,25 @@ httpServer.listen(PORT, () => {
   console.log(`\n🏛️  E-Gov Aloguinsan API running on port ${PORT}`);
   console.log(`📚 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 Health: http://localhost:${PORT}/health\n`);
+
+  // ── DB keepalive ping ───────────────────────────────────────────────────────
+  // Hostinger's MySQL server drops idle connections after its wait_timeout
+  // (commonly 30–300 s on shared hosting).  Prisma does not reconnect
+  // gracefully — it panics instead.  A lightweight SELECT 1 every 25 seconds
+  // keeps the connection warm without burning a meaningful amount of resources.
+  setInterval(async () => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+    } catch (err) {
+      if (err?.name === 'PrismaClientRustPanicError' || err?.message?.includes('PANIC')) {
+        console.error('Prisma panic in keepalive ping, restarting:', err.message);
+        process.exit(1);
+      }
+      // Transient errors (network blip, etc.) — log and continue; the next
+      // ping will re-establish the connection if it is still recoverable.
+      console.warn('DB keepalive ping failed (non-fatal):', err.message);
+    }
+  }, 25_000);
 
   // ── SLA breach notification scheduler ──────────────────────────────────────
   // Runs every 10 minutes; finds newly breached (unresolved) tickets whose
@@ -368,6 +405,10 @@ httpServer.listen(PORT, () => {
         });
       }
     } catch (err) {
+      if (err?.name === 'PrismaClientRustPanicError' || err?.message?.includes('PANIC')) {
+        console.error('Prisma panic in SLA check, restarting:', err.message);
+        process.exit(1);
+      }
       console.error('SLA check error:', err.message);
     }
   };
@@ -375,6 +416,7 @@ httpServer.listen(PORT, () => {
   // Run once immediately, then every 10 minutes
   checkSlaBreaches();
   setInterval(checkSlaBreaches, 10 * 60 * 1000);
-});
+}); // end httpServer.listen callback
+})(); // end async startup IIFE
 
 export default app;

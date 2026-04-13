@@ -22,20 +22,24 @@ import { PrismaClient } from '@prisma/client';
 /**
  * Build the DATABASE_URL with Hostinger-safe connection parameters.
  *
- * connection_limit=1  — single connection; the Rust query engine spawns its
- *   own internal pool, so one external slot is enough and avoids exhausting
+ * connection_limit=1  — single connection; the Rust query engine manages its
+ *   own internal pool, so one external slot is sufficient and avoids exhausting
  *   Hostinger's per-account MySQL connection cap.
- * pool_timeout=15     — wait up to 15 s for a free connection before giving up.
+ * pool_timeout=15     — wait up to 15 s for a free slot before giving up.
  * connect_timeout=10  — abort the initial TCP handshake after 10 s.
- * socket_timeout=30   — drop a query that has been waiting on the socket for
- *   30 s; prevents the Rust timer from hanging indefinitely, which is the root
- *   cause of the "PANIC: timer has gone away" crash on shared hosting.
+ *
+ * NOTE: socket_timeout was deliberately removed.  It is not a valid MySQL
+ * connection-string parameter for Prisma and was causing the Rust query engine
+ * to panic ("PANIC: timer has gone away") when MySQL dropped an idle connection
+ * and the 30-second socket timer subsequently fired on the dead socket.
+ * Connection freshness is now maintained by the explicit keepalive ping that
+ * runs every 25 seconds inside the server startup block.
  */
 function buildUrl() {
   const base = process.env.DATABASE_URL;
   if (!base) return undefined;
   const sep = base.includes('?') ? '&' : '?';
-  return `${base}${sep}connection_limit=1&pool_timeout=15&connect_timeout=10&socket_timeout=30`;
+  return `${base}${sep}connection_limit=1&pool_timeout=15&connect_timeout=10`;
 }
 
 function createClient() {
