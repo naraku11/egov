@@ -51,13 +51,15 @@ export default function ClientDashboard() {
   const { data, isLoading: loading } = useQuery({
     queryKey: ['client-dashboard'],
     queryFn: async () => {
-      const [ticketRes, notifRes] = await Promise.all([
+      const [ticketRes, notifRes, annRes] = await Promise.all([
         api.get('/tickets?limit=5'),
         api.get('/notifications'),
+        api.get('/announcements'),
       ]);
       return {
         tickets:       ticketRes.data.tickets || [],
         notifications: notifRes.data || [],
+        announcements: annRes.data || [],
       };
     },
     staleTime:            60_000,
@@ -66,6 +68,13 @@ export default function ClientDashboard() {
 
   const tickets       = data?.tickets       ?? [];
   const notifications = data?.notifications ?? [];
+  const announcements = data?.announcements ?? [];
+
+  /** Count of announcements published since the user last visited the Announcements page */
+  const newAnnouncementsCount = (() => {
+    const lastSeen = parseInt(localStorage.getItem('egov_ann_last_seen') || '0', 10);
+    return announcements.filter(a => new Date(a.publishedAt || a.createdAt).getTime() > lastSeen).length;
+  })();
 
   // ── Derived Statistics ──────────────────────────────────────────────────────
   /**
@@ -226,15 +235,21 @@ export default function ClientDashboard() {
                 {[
                   { label: t('trackTicket'), to: '/tickets', icon: '🔍', color: 'bg-blue-50 text-blue-700 hover:bg-blue-100 active:bg-blue-200' },
                   { label: 'Barangay Directory', to: '/directory', icon: '📋', color: 'bg-green-50 text-green-700 hover:bg-green-100 active:bg-green-200' },
-                  { label: 'Announcements', to: '/announcements', icon: '📢', color: 'bg-amber-50 text-amber-700 hover:bg-amber-100 active:bg-amber-200' },
+                  { label: 'Announcements', to: '/announcements', icon: '📢', color: 'bg-amber-50 text-amber-700 hover:bg-amber-100 active:bg-amber-200', badge: newAnnouncementsCount },
                 ].map(action => (
                   <Link
                     key={action.label}
                     to={action.to}
+                    onClick={action.badge > 0 ? () => localStorage.setItem('egov_ann_last_seen', Date.now().toString()) : undefined}
                     className={`flex items-center gap-3 p-3 rounded-xl transition-colors font-medium text-sm ${action.color}`}
                   >
                     <span className="text-lg">{action.icon}</span>
                     {action.label}
+                    {action.badge > 0 && (
+                      <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full font-semibold leading-none">
+                        {action.badge}
+                      </span>
+                    )}
                     <ArrowRight className="w-4 h-4 ml-auto" />
                   </Link>
                 ))}

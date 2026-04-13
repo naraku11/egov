@@ -35,7 +35,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAdaptivePoll } from '../hooks/useAdaptivePoll.js';
-import { CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, Send, ArrowUpCircle, X, Paperclip, FileText, Image as ImageIcon, Download } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, MessageSquare, ChevronDown, Send, ArrowUpCircle, X, Paperclip, FileText, Image as ImageIcon, Download, TrendingUp } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import api from '../api/client.js';
@@ -56,6 +56,48 @@ const STATUS_ACTIONS = [
   { value: 'RESOLVED', label: 'Mark Resolved', color: 'bg-green-600 hover:bg-green-700' },
   { value: 'CLOSED', label: 'Close Ticket', color: 'bg-gray-600 hover:bg-gray-700' },
 ];
+
+/**
+ * Returns SLA status info for a ticket based on its deadline and current status.
+ * Returns null for resolved/closed tickets or when no deadline is present.
+ *
+ * @param {string|null} slaDeadline - ISO date string of the SLA deadline.
+ * @param {string} status - Current ticket status.
+ * @returns {{ label: string, status: 'overdue'|'near'|'ontime' }|null}
+ */
+const getSlaInfo = (slaDeadline, status) => {
+  if (!slaDeadline || ['RESOLVED', 'CLOSED'].includes(status)) return null;
+  const diffMs = new Date(slaDeadline).getTime() - Date.now();
+  const diffH  = diffMs / 3_600_000;
+
+  if (diffMs <= 0) {
+    const absH = Math.abs(diffH);
+    const absM = Math.ceil(Math.abs(diffMs / 60_000));
+    return { label: `Overdue ${absH >= 1 ? `${Math.ceil(absH)}h` : `${absM}m`}`, status: 'overdue' };
+  }
+  if (diffH <= 2) {
+    return { label: `${Math.ceil(diffH * 60)}m left`, status: 'near' };
+  }
+  const d = Math.floor(diffH / 24);
+  const h = Math.floor(diffH % 24);
+  return { label: d > 0 ? `${d}d ${h}h left` : `${Math.ceil(diffH)}h left`, status: 'ontime' };
+};
+
+/**
+ * Returns an attention label string for a ticket based on SLA status and aging.
+ *
+ * @param {object} ticket - Ticket object with slaDeadline, status, createdAt.
+ * @returns {'overdue'|'near'|null}
+ */
+const getAttentionLabel = (ticket) => {
+  const sla = getSlaInfo(ticket.slaDeadline, ticket.status);
+  if (sla?.status === 'overdue') return 'overdue';
+  if (sla?.status === 'near') return 'near';
+  // Flag PENDING/ASSIGNED tickets that have been waiting more than 24 hours
+  const ageH = (Date.now() - new Date(ticket.createdAt).getTime()) / 3_600_000;
+  if (['PENDING', 'ASSIGNED'].includes(ticket.status) && ageH > 24) return 'near';
+  return null;
+};
 
 /**
  * ServantDashboard component.
@@ -98,6 +140,20 @@ export default function ServantDashboard() {
     },
     staleTime:            30_000,
     refetchOnWindowFocus: true,
+  });
+
+  /**
+   * Analytics query — fetches resolved tickets independently so the analytics
+   * panel always reflects the full history regardless of the current list filter.
+   * Uses a longer staleTime (5 min) since historical data changes slowly.
+   */
+  const { data: analyticsTickets = [] } = useQuery({
+    queryKey: ['servant-analytics'],
+    queryFn: async () => {
+      const res = await api.get('/tickets/servant/assigned?status=RESOLVED&limit=100');
+      return res.data.tickets || [];
+    },
+    staleTime: 5 * 60_000,
   });
 
   /** Tickets list derived from query (writable local copy for socket patches) */
@@ -220,15 +276,42 @@ export default function ServantDashboard() {
   }, [selected?.id]);
 
   /**
-   * New-assignment socket effect — invalidates the query cache so the list
-   * refreshes immediately when the server assigns a new ticket to this servant.
+   * New-assignment socket effect — refreshes the list and shows a pop-up alert
+   * whenever the server assigns a new ticket to this servant.
    */
   useEffect(() => {
-    const onAssigned = () =>
+    const onAssigned = (ticket) => {
       queryClient.invalidateQueries({ queryKey: ['servant-dashboard'] });
+      toast.success(
+        ticket?.ticketNumber
+          ? `New ticket assigned: ${ticket.ticketNumber}`
+          : 'New ticket assigned to you',
+        { icon: '🎫', duration: 5_000 }
+      );
+    };
     socket.on('ticket:assigned', onAssigned);
     return () => socket.off('ticket:assigned', onAssigned);
   }, [socket, queryClient]);
+
+  /**
+   * Servant push-notification listener.
+   * Handles real-time alerts sent directly to this servant's socket room:
+   *   SLA_BREACH  → urgent red toast (8 s)
+   *   NEW_MESSAGE → info toast when not currently viewing that ticket (4 s)
+   */
+  useEffect(() => {
+    const onNotification = (notif) => {
+      if (notif.type === 'SLA_BREACH') {
+        toast.error(`⏰ SLA Breach: ${notif.message}`, { duration: 8_000 });
+      } else if (notif.type === 'NEW_MESSAGE') {
+        // Suppress if servant already has that ticket open
+        if (notif.ticketId && selected?.id === notif.ticketId) return;
+        toast(`💬 ${notif.message}`, { duration: 4_000 });
+      }
+    };
+    socket.on('notification:new', onNotification);
+    return () => socket.off('notification:new', onNotification);
+  }, [socket, selected?.id]);
 
   // ── Data fetching helpers ───────────────────────────────────────────────────
 
@@ -266,7 +349,7 @@ export default function ServantDashboard() {
       toast.success(`Ticket ${status.toLowerCase().replace('_', ' ')}`);
       setStatusNote('');
       await loadTicket(selected.id);
-      loadData();
+      queryClient.invalidateQueries({ queryKey: ['servant-dashboard'] });
     } catch (err) {
       toast.error(err.message);
     }
@@ -307,7 +390,7 @@ export default function ServantDashboard() {
       setShowEscalate(false);
       setEscalateReason('');
       await loadTicket(selected.id);
-      loadData();
+      queryClient.invalidateQueries({ queryKey: ['servant-dashboard'] });
     } catch (err) {
       toast.error(err.message);
     }
@@ -335,14 +418,48 @@ export default function ServantDashboard() {
   // ── Derived values ──────────────────────────────────────────────────────────
 
   /**
-   * Sort order mapping: URGENT tickets surface first, then NORMAL, then LOW.
-   * Unknown priorities default to 1 (NORMAL).
+   * Multi-factor sort: overdue tickets first, then near-deadline ("Needs Attention"),
+   * then by priority (URGENT → NORMAL → LOW), then oldest first within each group.
    */
   const priorityOrder = { URGENT: 0, NORMAL: 1, LOW: 2 };
-  const sortedTickets = [...tickets].sort((a, b) => (priorityOrder[a.priority] || 1) - (priorityOrder[b.priority] || 1));
+  const attentionScore = (t) => {
+    const lbl = getAttentionLabel(t);
+    if (lbl === 'overdue') return 0;
+    if (lbl === 'near')    return 1;
+    return 2;
+  };
+  const sortedTickets = [...tickets].sort((a, b) => {
+    const as = attentionScore(a), bs = attentionScore(b);
+    if (as !== bs) return as - bs;
+    const pa = priorityOrder[a.priority] ?? 1, pb = priorityOrder[b.priority] ?? 1;
+    if (pa !== pb) return pa - pb;
+    return new Date(a.createdAt) - new Date(b.createdAt); // oldest first within same group
+  });
 
-  /** Count of active (non-resolved, non-closed) URGENT tickets — drives the alert badge */
-  const urgentCount = tickets.filter(t => t.priority === 'URGENT' && !['RESOLVED','CLOSED'].includes(t.status)).length;
+  /** Count of active urgent + overdue tickets — drives the alert badge */
+  const urgentCount = tickets.filter(t =>
+    !['RESOLVED', 'CLOSED'].includes(t.status) &&
+    (t.priority === 'URGENT' || getAttentionLabel(t) === 'overdue')
+  ).length;
+
+  // ── Analytics derived values ─────────────────────────────────────────────────
+  const todayStart  = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const weekAgo     = new Date(Date.now() - 7 * 24 * 3_600_000);
+
+  const resolvedToday    = analyticsTickets.filter(t => t.resolvedAt && new Date(t.resolvedAt) >= todayStart).length;
+  const resolvedThisWeek = analyticsTickets.filter(t => t.resolvedAt && new Date(t.resolvedAt) >= weekAgo).length;
+
+  const avgResponseHours = (() => {
+    const with_res = analyticsTickets.filter(t => t.resolvedAt);
+    if (!with_res.length) return null;
+    const avgMs = with_res.reduce((s, t) => s + (new Date(t.resolvedAt) - new Date(t.createdAt)), 0) / with_res.length;
+    return (avgMs / 3_600_000).toFixed(1);
+  })();
+
+  const overdueCount     = tickets.filter(t => getAttentionLabel(t) === 'overdue').length;
+  const totalTickets     = stats.total  || 0;
+  const resolvedTotal    = stats.resolved || 0;
+  const completionRate   = totalTickets > 0 ? Math.round((resolvedTotal / totalTickets) * 100) : 0;
 
   return (
     <SidebarLayout>
@@ -410,6 +527,51 @@ export default function ServantDashboard() {
           ))}
         </div>
 
+        {/* ── Performance Analytics Panel ─────────────────────────────────────
+            Shows resolved-today, resolved-this-week, average response time,
+            overdue count, and a pending vs completed progress bar.
+        ──────────────────────────────────────────────────────────────────── */}
+        <div className="card mb-6">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm mb-4">
+            <TrendingUp className="w-4 h-4 text-indigo-600" />
+            Performance Analytics
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <div className="text-center p-3 bg-green-50 rounded-xl">
+              <p className="text-2xl font-bold text-green-600">{resolvedToday}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Resolved Today</p>
+            </div>
+            <div className="text-center p-3 bg-indigo-50 rounded-xl">
+              <p className="text-2xl font-bold text-indigo-600">{resolvedThisWeek}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Resolved This Week</p>
+            </div>
+            <div className="text-center p-3 bg-amber-50 rounded-xl">
+              <p className="text-2xl font-bold text-amber-600">
+                {avgResponseHours !== null ? `${avgResponseHours}h` : 'N/A'}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">Avg Response Time</p>
+            </div>
+            <div className={`text-center p-3 rounded-xl ${overdueCount > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
+              <p className={`text-2xl font-bold ${overdueCount > 0 ? 'text-red-600' : 'text-gray-500'}`}>{overdueCount}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Overdue Tickets</p>
+            </div>
+          </div>
+          {/* Pending vs Completed progress bar */}
+          <div>
+            <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+              <span>Pending <span className="font-semibold text-yellow-600">({stats.pending || 0})</span></span>
+              <span className="font-medium">{completionRate}% completed</span>
+              <span>Resolved <span className="font-semibold text-green-600">({resolvedTotal})</span></span>
+            </div>
+            <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-indigo-500 to-green-500 rounded-full transition-all duration-500"
+                style={{ width: `${completionRate}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
         {/* ── Split-Panel Layout ──────────────────────────────────────────────
             Left panel: ticket list (hidden on mobile when a ticket is open).
             Right panel: ticket detail (hidden on mobile when no ticket is open).
@@ -467,9 +629,23 @@ export default function ServantDashboard() {
                     </div>
                     <p className="text-sm font-medium text-gray-900 truncate">{ticket.title}</p>
                     <p className="text-xs text-gray-500 mt-0.5 truncate">{ticket.user?.name} · {ticket.user?.barangay}</p>
-                    <div className="flex items-center justify-between mt-2">
-                      <PriorityBadge priority={ticket.priority} />
-                      <span className="text-xs text-gray-400">{format(new Date(ticket.createdAt), 'MMM d')}</span>
+                    <div className="flex items-center justify-between mt-2 gap-1">
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <PriorityBadge priority={ticket.priority} />
+                        {getAttentionLabel(ticket) === 'overdue' && (
+                          <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-semibold">Overdue</span>
+                        )}
+                        {getAttentionLabel(ticket) === 'near' && (
+                          <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full font-semibold">Needs Attention</span>
+                        )}
+                      </div>
+                      {(() => {
+                        const sla = getSlaInfo(ticket.slaDeadline, ticket.status);
+                        if (!sla) return <span className="text-xs text-gray-400">{format(new Date(ticket.createdAt), 'MMM d')}</span>;
+                        const cls = { overdue: 'text-red-600', near: 'text-yellow-600', ontime: 'text-green-600' }[sla.status];
+                        const dot = { overdue: '🔴', near: '🟡', ontime: '🟢' }[sla.status];
+                        return <span className={`text-xs font-medium ${cls}`}>{dot} {sla.label}</span>;
+                      })()}
                     </div>
                   </button>
                 ))}
@@ -510,6 +686,23 @@ export default function ServantDashboard() {
                       {selected.user?.phone && <span>📱 {selected.user?.phone}</span>}
                       <span>📅 {format(new Date(selected.createdAt), 'MMM d, yyyy h:mm a')}</span>
                     </div>
+                    {/* SLA countdown — hidden for resolved/closed tickets */}
+                    {(() => {
+                      const sla = getSlaInfo(selected.slaDeadline, selected.status);
+                      if (!sla) return null;
+                      const styles = {
+                        overdue: 'bg-red-50 border-red-200 text-red-700',
+                        near:    'bg-yellow-50 border-yellow-200 text-yellow-700',
+                        ontime:  'bg-green-50 border-green-200 text-green-700',
+                      }[sla.status];
+                      return (
+                        <div className={`inline-flex items-center gap-1.5 mt-2 text-xs px-3 py-1.5 rounded-lg border ${styles}`}>
+                          <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span>SLA: <strong>{sla.label}</strong></span>
+                          {sla.status === 'overdue' && <span className="font-semibold">— Action Required</span>}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
