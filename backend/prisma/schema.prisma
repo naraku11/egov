@@ -311,7 +311,7 @@ model Notification {
 
   // Optional link back to the ticket that triggered this notification
   ticketId  String?
-  ticket    Ticket?  @relation(fields: [ticketId], references: [id])
+  ticket    Ticket?  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
 
   // Notification content
   type      String   // Event type code (e.g. "TICKET_ASSIGNED", "STATUS_CHANGED")
@@ -342,7 +342,7 @@ model Feedback {
 
   // One-to-one link to the resolved ticket
   ticketId  String   @unique  // Ensures only one feedback entry per ticket
-  ticket    Ticket   @relation(fields: [ticketId], references: [id])
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   // Survey response
   rating    Int      // Satisfaction score (e.g. 1 = very dissatisfied, 5 = very satisfied)

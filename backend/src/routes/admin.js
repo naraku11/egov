@@ -593,6 +593,11 @@ router.delete('/tickets/:id', authenticate, requireAdmin, async (req, res, next)
     const ticket = await prisma.ticket.findUnique({ where: { id } });
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
+    // Notification and Feedback lack onDelete:Cascade in the schema, so remove
+    // them explicitly before deleting the ticket to avoid FK constraint errors.
+    // Attachments and TicketMessages are covered by schema-level Cascade.
+    await prisma.notification.deleteMany({ where: { ticketId: id } });
+    await prisma.feedback.deleteMany({ where: { ticketId: id } });
     await prisma.ticket.delete({ where: { id } });
     res.json({ message: 'Ticket deleted successfully' });
   } catch (err) {
