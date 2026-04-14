@@ -282,16 +282,28 @@ export default function ServantDashboard() {
   useEffect(() => {
     const onAssigned = (ticket) => {
       queryClient.invalidateQueries({ queryKey: ['servant-dashboard'] });
-      toast.success(
-        ticket?.ticketNumber
-          ? `New ticket assigned: ${ticket.ticketNumber}`
-          : 'New ticket assigned to you',
-        { icon: '🎫', duration: 5_000 }
+      toast(
+        (tst) => (
+          <div
+            className="cursor-pointer"
+            onClick={() => { toast.dismiss(tst.id); if (ticket?.id) loadTicket(ticket.id); }}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-base">🎫</span>
+              <span className="text-sm font-bold text-gray-900">New Ticket Assigned</span>
+            </div>
+            <p className="text-xs text-gray-600 leading-snug">
+              {ticket?.ticketNumber ? `Ticket ${ticket.ticketNumber} has been assigned to you` : 'A new ticket has been assigned to you'}
+            </p>
+            <p className="text-xs text-primary-600 mt-1.5 font-medium">Click to open →</p>
+          </div>
+        ),
+        { duration: 8_000, position: 'top-right' }
       );
     };
     socket.on('ticket:assigned', onAssigned);
     return () => socket.off('ticket:assigned', onAssigned);
-  }, [socket, queryClient]);
+  }, [socket, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Servant push-notification listener.
@@ -302,16 +314,46 @@ export default function ServantDashboard() {
   useEffect(() => {
     const onNotification = (notif) => {
       if (notif.type === 'SLA_BREACH') {
-        toast.error(`⏰ SLA Breach: ${notif.message}`, { duration: 8_000 });
+        toast(
+          (tst) => (
+            <div
+              className={notif.ticketId ? 'cursor-pointer' : ''}
+              onClick={() => { if (!notif.ticketId) return; toast.dismiss(tst.id); loadTicket(notif.ticketId); }}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-base">⏰</span>
+                <span className="text-sm font-bold text-red-700">SLA Breach Alert</span>
+              </div>
+              <p className="text-xs text-gray-700 leading-snug">{notif.message}</p>
+              {notif.ticketId && <p className="text-xs text-red-600 mt-1.5 font-medium">Click to open ticket →</p>}
+            </div>
+          ),
+          { duration: 8_000, position: 'top-right' }
+        );
       } else if (notif.type === 'NEW_MESSAGE') {
         // Suppress if servant already has that ticket open
         if (notif.ticketId && selected?.id === notif.ticketId) return;
-        toast(`💬 ${notif.message}`, { duration: 4_000 });
+        toast(
+          (tst) => (
+            <div
+              className={notif.ticketId ? 'cursor-pointer' : ''}
+              onClick={() => { if (!notif.ticketId) return; toast.dismiss(tst.id); loadTicket(notif.ticketId); }}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-base">💬</span>
+                <span className="text-sm font-bold text-gray-900">New Message</span>
+              </div>
+              <p className="text-xs text-gray-600 leading-snug">{notif.message}</p>
+              {notif.ticketId && <p className="text-xs text-primary-600 mt-1.5 font-medium">Click to open ticket →</p>}
+            </div>
+          ),
+          { duration: 6_000, position: 'top-right' }
+        );
       }
     };
     socket.on('notification:new', onNotification);
     return () => socket.off('notification:new', onNotification);
-  }, [socket, selected?.id]);
+  }, [socket, selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Data fetching helpers ───────────────────────────────────────────────────
 

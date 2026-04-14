@@ -117,10 +117,36 @@ export default function SidebarLayout({ children }) {
         audio.volume = 0.5;
         audio.play().catch(() => {});
       } catch {}
+
+      // Show a clickable toast for citizens.
+      // Servants handle their own toasts inside ServantDashboard.
+      if (!isServant) {
+        const iconMap = { NEW_MESSAGE: '💬', STATUS_UPDATE: '🔄', TICKET_ASSIGNED: '👤', TICKET_CREATED: '📝' };
+        const icon = iconMap[notif.type] || '🔔';
+        toast(
+          (tst) => (
+            <div
+              className={`cursor-pointer ${notif.ticketId ? '' : 'cursor-default'}`}
+              onClick={() => {
+                toast.dismiss(tst.id);
+                if (notif.ticketId) navigate(`/tickets/${notif.ticketId}`);
+              }}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-base">{icon}</span>
+                <span className="text-sm font-bold text-gray-900">{notif.title}</span>
+              </div>
+              <p className="text-xs text-gray-600 leading-snug line-clamp-2">{notif.message}</p>
+              {notif.ticketId && <p className="text-xs text-primary-600 mt-1.5 font-medium">Click to view →</p>}
+            </div>
+          ),
+          { duration: 6_000, position: 'top-right' }
+        );
+      }
     };
     socket.on('notification:new', onNew);
     return () => socket.off('notification:new', onNew);
-  }, [isAuthenticated, isAdmin, socket]);
+  }, [isAuthenticated, isAdmin, isServant, socket, navigate]);
 
   // Announcement popup — show toast when admin publishes a new announcement
   useEffect(() => {
