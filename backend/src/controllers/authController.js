@@ -836,8 +836,9 @@ export const verifyAuthOtp = async (req, res, next) => {
       });
       if (user.email) sendWelcomeEmail(user.email, user.name);
 
-      // If ID is pending review, don't auto-login — inform the user
+      // If ID is pending review, don't auto-login — inform the user and alert admins
       if (user.idStatus === 'PENDING_REVIEW') {
+        try { getIO()?.to('admin').emit('verification:pending', { id: user.id, name: user.name, createdAt: user.createdAt }); } catch {}
         return res.json({
           pendingReview: true,
           message: 'Account created successfully! Your ID is under review by admin. You will be able to login once your ID is verified.',
@@ -1062,8 +1063,9 @@ export const verifyPhoneOtp = async (req, res, next) => {
       });
       if (user.email) sendWelcomeEmail(user.email, user.name);
 
-      // If ID is pending review, don't auto-login — inform the user
+      // If ID is pending review, don't auto-login — inform the user and alert admins
       if (user.idStatus === 'PENDING_REVIEW') {
+        try { getIO()?.to('admin').emit('verification:pending', { id: user.id, name: user.name, createdAt: user.createdAt }); } catch {}
         authOtpStore.delete(userId);
         return res.json({
           pendingReview: true,

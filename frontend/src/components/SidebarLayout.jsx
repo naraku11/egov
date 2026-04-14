@@ -174,6 +174,47 @@ export default function SidebarLayout({ children }) {
     setNotifOpen(false);
   };
 
+  // ── Admin: pending ID verification badge ────────────────────────────────────
+  const [pendingVerifCount, setPendingVerifCount] = useState(0);
+
+  // Load initial count on mount (admin only)
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.get('/admin/users')
+      .then(r => setPendingVerifCount((r.data || []).filter(u => u.idStatus === 'PENDING_REVIEW').length))
+      .catch(() => {});
+  }, [isAdmin]);
+
+  // Reset badge when admin navigates to the Citizens tab
+  useEffect(() => {
+    if (isAdmin && location.pathname === '/admin' && new URLSearchParams(location.search).get('tab') === 'citizens') {
+      setPendingVerifCount(0);
+    }
+  }, [location, isAdmin]);
+
+  // Real-time: new citizen pending verification
+  useEffect(() => {
+    if (!isAdmin) return;
+    const onVerifPending = (data) => {
+      setPendingVerifCount(prev => prev + 1);
+      toast(
+        (tst) => (
+          <div className="cursor-pointer" onClick={() => { toast.dismiss(tst.id); navigate('/admin?tab=citizens'); }}>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">🪪</span>
+              <span className="text-sm font-bold text-gray-900">ID Verification Request</span>
+            </div>
+            <p className="text-sm text-gray-700 leading-snug">{data.name} submitted an ID for review</p>
+            <p className="text-xs text-primary-600 mt-1.5 font-medium">Click to review →</p>
+          </div>
+        ),
+        { duration: 10_000, position: 'top-right' }
+      );
+    };
+    socket.on('verification:pending', onVerifPending);
+    return () => socket.off('verification:pending', onVerifPending);
+  }, [isAdmin, socket, navigate]);
+
   // Lock body scroll when mobile drawer is open
   useEffect(() => {
     if (mobileOpen) {
@@ -230,7 +271,7 @@ export default function SidebarLayout({ children }) {
     ? [
         { to: '/admin',                  icon: ShieldCheck,     label: 'Admin Panel' },
         { to: '/admin?tab=servants',     icon: ClipboardList,   label: 'Servants' },
-        { to: '/admin?tab=citizens',     icon: Users,           label: 'Citizens' },
+        { to: '/admin?tab=citizens',     icon: Users,           label: 'Citizens', badge: pendingVerifCount },
         { to: '/admin?tab=departments',  icon: Building2,       label: 'Departments' },
         { to: '/announcements',          icon: Megaphone,       label: 'Announcements' },
         { to: '/directory',              icon: BookOpen,        label: 'Directory' },
@@ -277,7 +318,7 @@ export default function SidebarLayout({ children }) {
         {(!collapsed || isMobile) && (
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-3 mb-2">Navigation</p>
         )}
-        {navItems.map(({ to, icon: Icon, label }) => (
+        {navItems.map(({ to, icon: Icon, label, badge }) => (
           <Link
             key={to}
             to={to}
@@ -289,8 +330,25 @@ export default function SidebarLayout({ children }) {
                 : 'text-gray-600 hover:text-primary-600 hover:bg-gray-50'
             } ${collapsed && !isMobile ? 'justify-center' : ''}`}
           >
-            <Icon className="w-5 h-5 flex-shrink-0" />
-            {(!collapsed || isMobile) && <span>{label}</span>}
+            <div className="relative flex-shrink-0">
+              <Icon className="w-5 h-5" />
+              {/* Badge shown when collapsed (icon-only mode) */}
+              {badge > 0 && collapsed && !isMobile && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+                  {badge > 9 ? '9+' : badge}
+                </span>
+              )}
+            </div>
+            {(!collapsed || isMobile) && (
+              <>
+                <span className="flex-1">{label}</span>
+                {badge > 0 && (
+                  <span className="w-5 h-5 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+                    {badge > 9 ? '9+' : badge}
+                  </span>
+                )}
+              </>
+            )}
           </Link>
         ))}
       </nav>

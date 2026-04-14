@@ -798,6 +798,17 @@ export default function AdminDashboard() {
     return () => socket.off('servant:statusUpdate', onStatusUpdate);
   }, [socket, queryClient]);
 
+  // Auto-refresh citizens list and stats when a new ID verification comes in
+  useEffect(() => {
+    const onVerifPending = () => {
+      if (tab === 'citizens') fetchTabData('citizens');
+      // Bump the pending count in stats so the overview banner updates live
+      setStats(prev => prev ? { ...prev, pendingVerifications: (prev.pendingVerifications || 0) + 1 } : prev);
+    };
+    socket.on('verification:pending', onVerifPending);
+    return () => socket.off('verification:pending', onVerifPending);
+  }, [socket, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Data fetching helpers ───────────────────────────────────────────────────
 
   /**
@@ -1183,6 +1194,23 @@ export default function AdminDashboard() {
                 </div>
               ))}
             </div>
+
+            {/* Pending ID verification alert — shown when citizens are waiting for review */}
+            {stats.pendingVerifications > 0 && (
+              <button
+                onClick={() => setTab('citizens')}
+                className="w-full flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-left hover:bg-amber-100 transition-colors"
+              >
+                <ShieldCheck className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-amber-800">
+                    {stats.pendingVerifications} citizen{stats.pendingVerifications !== 1 ? 's' : ''} pending ID verification
+                  </p>
+                  <p className="text-xs text-amber-600 mt-0.5">Review uploaded IDs and approve or reject</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-amber-500 flex-shrink-0" />
+              </button>
+            )}
 
             {/* Charts column (left 2/3) + recent tickets sidebar (right 1/3) */}
             <div className="grid lg:grid-cols-3 gap-6">

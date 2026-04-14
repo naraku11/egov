@@ -41,7 +41,7 @@ const router = Router();
 router.get('/stats', authenticate, requireAdmin, async (req, res, next) => {
   try {
     // Fetch all top-level counts in parallel to minimise DB round-trips
-    const [totalTickets, pendingTickets, resolvedToday, totalUsers, totalServants] = await Promise.all([
+    const [totalTickets, pendingTickets, resolvedToday, totalUsers, totalServants, pendingVerifications] = await Promise.all([
       prisma.ticket.count(),
       prisma.ticket.count({ where: { status: 'PENDING' } }),
       // Resolved today: from midnight of the current calendar day
@@ -50,6 +50,7 @@ router.get('/stats', authenticate, requireAdmin, async (req, res, next) => {
       }),
       prisma.user.count({ where: { role: 'CLIENT' } }),
       prisma.servant.count(),
+      prisma.user.count({ where: { role: 'CLIENT', idStatus: 'PENDING_REVIEW' } }),
     ]);
 
     // Group ticket counts by status, priority, department + aggregates — all in parallel
@@ -101,6 +102,7 @@ router.get('/stats', authenticate, requireAdmin, async (req, res, next) => {
       totalUsers,
       totalServants,
       slaBreaches,
+      pendingVerifications,
       byStatus: byStatus.map(s => ({ status: s.status, count: s._count })),
       byPriority: byPriority.map(p => ({ priority: p.priority, count: p._count })),
       byDepartment: deptStats,
