@@ -192,6 +192,29 @@ export default function Navbar() {
     } catch { /* ignore */ }
   };
 
+  /**
+   * Marks a single notification as read.
+   * Servant socket notifications use temporary IDs prefixed with "sn-" and
+   * are never persisted — skip the API call for those.
+   */
+  const markOneRead = (id) => {
+    if (!id || id.startsWith('sn-')) return;
+    api.patch(`/notifications/${id}/read`).catch(() => {});
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    setUnread(prev => Math.max(0, prev - 1));
+  };
+
+  /** Navigate to the resource linked by a notification, then close the panel. */
+  const handleNotifClick = (n) => {
+    if (!n.isRead) markOneRead(n.id);
+    if (n.ticketId) {
+      isServant
+        ? navigate(`/servant?ticket=${n.ticketId}`)
+        : navigate(`/tickets/${n.ticketId}`);
+    }
+    setNotifOpen(false);
+  };
+
   // Close menus on route change
   useEffect(() => {
     setMobileOpen(false);
@@ -312,14 +335,10 @@ export default function Navbar() {
                         {notifications.length === 0 ? (
                           <p className="text-sm text-gray-400 text-center py-6">No notifications</p>
                         ) : notifications.slice(0, 20).map(n => (
-                          /* Clicking a notification navigates to the related ticket when available */
                           <button
                             key={n.id}
-                            onClick={() => {
-                              if (n.ticketId) navigate(`/tickets/${n.ticketId}`);
-                              setNotifOpen(false);
-                            }}
-                            className={`w-full text-left px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors ${!n.isRead ? 'bg-primary-50/40' : ''}`}
+                            onClick={() => handleNotifClick(n)}
+                            className={`w-full text-left px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors ${!n.isRead ? 'bg-primary-50/40' : ''} ${!n.ticketId ? 'cursor-default' : ''}`}
                           >
                             <div className="flex items-start gap-2">
                               {/* Unread indicator dot */}

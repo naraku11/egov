@@ -15,10 +15,12 @@
  * No authentication or data-fetching is required; content is entirely static / i18n-driven.
  */
 
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Bot, MapPin, Languages, Mic, Clock, CheckCircle } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext.jsx';
 import Navbar from '../components/Navbar.jsx';
+import api from '../api/client.js';
 
 /**
  * Static list of municipal departments and the concern categories they handle.
@@ -48,9 +50,21 @@ const DEPARTMENTS = [
  *
  * @returns {JSX.Element} The public landing page layout.
  */
+/** SLA hours for the standard NORMAL-priority ticket (mirrors ticketController.js). */
+const NORMAL_SLA_HOURS = 48;
+
 export default function LandingPage() {
   // Pull the translation helper, current locale code, and the locale-switcher function
   const { t, language, changeLanguage } = useLanguage();
+
+  // Live department count — falls back to the static DEPARTMENTS length if the API is unreachable
+  const [deptCount, setDeptCount] = useState(DEPARTMENTS.length);
+
+  useEffect(() => {
+    api.get('/departments')
+      .then(r => { if (Array.isArray(r.data)) setDeptCount(r.data.length); })
+      .catch(() => {}); // keep the static fallback on error
+  }, []);
 
   return (
     <div className="min-h-screen bg-white">
@@ -126,11 +140,11 @@ export default function LandingPage() {
                 </Link>
               </div>
 
-              {/* Quick-glance stats — hard-coded figures that summarise system capabilities */}
+              {/* Quick-glance stats derived from live data and system config */}
               <div className="flex flex-wrap gap-6 mt-10">
                 {[
-                  { label: 'Departments', value: '8' },
-                  { label: 'Response SLA', value: '24hr' },
+                  { label: 'Departments', value: String(deptCount) },
+                  { label: 'Response SLA', value: `${NORMAL_SLA_HOURS}hr` },
                   { label: 'Languages', value: '3' },
                 ].map(stat => (
                   <div key={stat.label}>

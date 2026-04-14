@@ -157,6 +157,23 @@ export default function SidebarLayout({ children }) {
     } catch {}
   };
 
+  const markOneRead = (id) => {
+    if (!id || id.startsWith('sn-')) return;
+    api.patch(`/notifications/${id}/read`).catch(() => {});
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    setUnread(prev => Math.max(0, prev - 1));
+  };
+
+  const handleNotifClick = (n) => {
+    if (!n.isRead) markOneRead(n.id);
+    if (n.ticketId) {
+      isServant
+        ? navigate(`/servant?ticket=${n.ticketId}`)
+        : navigate(`/tickets/${n.ticketId}`);
+    }
+    setNotifOpen(false);
+  };
+
   // Lock body scroll when mobile drawer is open
   useEffect(() => {
     if (mobileOpen) {
@@ -314,8 +331,8 @@ export default function SidebarLayout({ children }) {
                   ) : notifications.slice(0, 15).map(n => (
                     <button
                       key={n.id}
-                      onClick={() => { if (n.ticketId) navigate(`/tickets/${n.ticketId}`); setNotifOpen(false); }}
-                      className={`w-full text-left px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors ${!n.isRead ? 'bg-primary-50/40' : ''}`}
+                      onClick={() => handleNotifClick(n)}
+                      className={`w-full text-left px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors ${!n.isRead ? 'bg-primary-50/40' : ''} ${!n.ticketId ? 'cursor-default' : ''}`}
                     >
                       <div className="flex items-start gap-2">
                         {!n.isRead && <span className="mt-1.5 w-2 h-2 rounded-full bg-primary-500 flex-shrink-0" />}
@@ -475,8 +492,8 @@ export default function SidebarLayout({ children }) {
                       ) : notifications.slice(0, 15).map(n => (
                         <button
                           key={n.id}
-                          onClick={() => { if (n.ticketId) navigate(`/tickets/${n.ticketId}`); setNotifOpen(false); }}
-                          className={`w-full text-left px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors ${!n.isRead ? 'bg-primary-50/40' : ''}`}
+                          onClick={() => handleNotifClick(n)}
+                          className={`w-full text-left px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors ${!n.isRead ? 'bg-primary-50/40' : ''} ${!n.ticketId ? 'cursor-default' : ''}`}
                         >
                           <div className="flex items-start gap-2">
                             {!n.isRead && <span className="mt-1.5 w-2 h-2 rounded-full bg-primary-500 flex-shrink-0" />}

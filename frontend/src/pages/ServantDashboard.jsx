@@ -337,6 +337,17 @@ export default function ServantDashboard() {
     }
   };
 
+  // Open a specific ticket when navigated here via a notification link (?ticket=<id>)
+  useEffect(() => {
+    const ticketId = new URLSearchParams(window.location.search).get('ticket');
+    if (!ticketId) return;
+    loadTicket(ticketId);
+    // Remove the param from the URL so a refresh doesn't re-open it
+    const url = new URL(window.location.href);
+    url.searchParams.delete('ticket');
+    window.history.replaceState({}, '', url.toString());
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   /**
    * Updates the selected ticket's status, optionally attaching a note.
    * Refreshes both the detail view and the list after a successful update.
