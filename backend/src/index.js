@@ -321,33 +321,34 @@ process.on('unhandledRejection', (reason) => {
   }
 
 httpServer.listen(PORT, () => {
-  // On Hostinger shared hosting every open HTTP connection counts as an "entry
-  // process". The plan limit is 40 — all settings below are tuned to keep the
-  // active connection count well under that ceiling.
+  // Hostinger plan limit: 120 entry processes.
+  // Each open TCP connection (HTTP keep-alive or WebSocket) consumes one slot.
   //
-  // maxConnections (35) — hard-cap concurrent TCP connections at 35, leaving a
-  //   5-slot safety margin below the 40-process limit. New connections above
-  //   this number are queued by the OS and admitted as slots free up.
-  // keepAliveTimeout (5 s) — close idle persistent connections quickly so slots
-  //   are freed well before the host's reverse-proxy idle timeout (~60 s).
-  // headersTimeout (10 s) — must be strictly above keepAliveTimeout to prevent
-  //   a Node.js race where the socket closes before headers are fully sent.
-  // requestTimeout (25 s) — abort any request that takes more than 25 seconds
-  //   end-to-end (DB heavy queries and file uploads should finish in time).
-  httpServer.maxConnections   = 35;
-  httpServer.keepAliveTimeout = 5_000;
-  httpServer.headersTimeout   = 10_000;
-  httpServer.requestTimeout   = 25_000;
+  // maxConnections (100) — cap concurrent TCP connections at 100, reserving 20
+  //   slots as a safety buffer for brief request bursts and OS overhead.
+  //   The previous value (35) was tuned for an old 40-process plan and was
+  //   throttling legitimate connections, causing the sawtooth spike pattern.
+  // keepAliveTimeout (15 s) — hold idle persistent connections for 15 s before
+  //   closing them; long enough to reuse sockets across sequential requests,
+  //   short enough to free slots within one request cycle.
+  // headersTimeout (20 s) — must exceed keepAliveTimeout to avoid a Node.js
+  //   race where the socket is closed before response headers finish sending.
+  // requestTimeout (30 s) — abort requests that run beyond 30 s end-to-end
+  //   (covers heavy DB queries and multi-file uploads with headroom to spare).
+  httpServer.maxConnections   = 100;
+  httpServer.keepAliveTimeout = 15_000;
+  httpServer.headersTimeout   = 20_000;
+  httpServer.requestTimeout   = 30_000;
 
   console.log(`\n🏛️  E-Gov Aloguinsan API running on port ${PORT}`);
   console.log(`📚 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 Health: http://localhost:${PORT}/health\n`);
 
   // ── DB keepalive ping ───────────────────────────────────────────────────────
-  // Hostinger's MySQL server drops idle connections after its wait_timeout
-  // (commonly 30–300 s on shared hosting).  Prisma does not reconnect
-  // gracefully — it panics instead.  A lightweight SELECT 1 every 25 seconds
-  // keeps the connection warm without burning a meaningful amount of resources.
+  // Hostinger's MySQL server drops idle connections after its wait_timeout.
+  // A lightweight SELECT 1 every 45 seconds keeps the connection warm.
+  // 45 s is safely below most shared-hosting wait_timeout values (≥ 60 s)
+  // while firing less often than the previous 25 s to reduce process churn.
   setInterval(async () => {
     try {
       await prisma.$queryRaw`SELECT 1`;
@@ -360,7 +361,7 @@ httpServer.listen(PORT, () => {
       // ping will re-establish the connection if it is still recoverable.
       console.warn('DB keepalive ping failed (non-fatal):', err.message);
     }
-  }, 25_000);
+  }, 45_000);
 
   // ── SLA breach notification scheduler ──────────────────────────────────────
   // Runs every 10 minutes; finds newly breached (unresolved) tickets whose
